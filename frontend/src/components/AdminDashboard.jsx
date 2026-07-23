@@ -44,8 +44,22 @@ function useCountUp(target, active, duration = 800) {
   return value;
 }
 
+const PAGE_SIZE = 25;
+
+const emptyPage = {
+  items: [],
+  total: 0,
+  page: 1,
+  page_size: PAGE_SIZE,
+  pending_count: 0,
+  new_count: 0,
+  children_count: 0,
+  grandchildren_count: 0,
+};
+
 export default function AdminDashboard({ token, onLogout }) {
-  const [registrations, setRegistrations] = useState([]);
+  const [pageData, setPageData] = useState(emptyPage);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -66,16 +80,21 @@ export default function AdminDashboard({ token, onLogout }) {
 
   const navigate = useNavigate();
 
+  const registrations = pageData.items;
   const username = useMemo(() => getUsernameFromToken(token) || "Admin", [token]);
 
   const load = useCallback(
-    (activeFilters = filters) => {
+    (activeFilters = filters, targetPage = page) => {
       setLoading(true);
       setError("");
-      fetchRegistrations(token, activeFilters)
+      fetchRegistrations(token, { ...activeFilters, page: targetPage, page_size: PAGE_SIZE })
         .then((data) => {
-          setRegistrations(data);
-          const newIds = data.filter((r) => r.is_new).map((r) => r.id);
+          if (data.items.length === 0 && targetPage > 1 && data.total > 0) {
+            setPage(targetPage - 1);
+            return;
+          }
+          setPageData(data);
+          const newIds = data.items.filter((r) => r.is_new).map((r) => r.id);
           if (newIds.length > 0) {
             markRegistrationsSeen(token, newIds).catch(() => {});
           }
@@ -83,7 +102,7 @@ export default function AdminDashboard({ token, onLogout }) {
         .catch((err) => setError(err.message))
         .finally(() => setLoading(false));
     },
-    [token, filters]
+    [token, filters, page]
   );
 
   useEffect(() => {
@@ -91,27 +110,20 @@ export default function AdminDashboard({ token, onLogout }) {
       navigate("/admin/login");
       return;
     }
-    load({});
+    load(filters, page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, navigate]);
+  }, [token, navigate, page]);
 
-  const stats = useMemo(() => {
-    const totalChildren = registrations.reduce((sum, r) => sum + (r.children?.length ?? 0), 0);
-    const totalGrandchildren = registrations.reduce((sum, r) => sum + (r.grandchildren?.length ?? 0), 0);
-    const pendingCount = registrations.filter((r) => r.status === "pending").length;
-    const newCount = registrations.filter((r) => r.is_new).length;
-    const latest = registrations
-      .map((r) => new Date(r.created_at))
-      .sort((a, b) => b - a)[0];
-    return {
-      total: registrations.length,
-      totalChildren,
-      totalGrandchildren,
-      pendingCount,
-      newCount,
-      latest: latest ? latest.toLocaleDateString() : "—",
-    };
-  }, [registrations]);
+  const stats = useMemo(
+    () => ({
+      total: pageData.total,
+      totalChildren: pageData.children_count,
+      totalGrandchildren: pageData.grandchildren_count,
+      pendingCount: pageData.pending_count,
+      newCount: pageData.new_count,
+    }),
+    [pageData]
+  );
 
   const countedTotal = useCountUp(stats.total, !loading);
   const countedChildren = useCountUp(stats.totalChildren, !loading);
@@ -120,16 +132,18 @@ export default function AdminDashboard({ token, onLogout }) {
 
   const handleApplyFilters = (draft) => {
     setFilters(draft);
-    load(draft);
+    setPage(1);
+    load(draft, 1);
   };
 
   const handleResetFilters = () => {
     setFilters({});
-    load({});
+    setPage(1);
+    load({}, 1);
   };
 
   const handleExport = async () => {
-    if (registrations.length === 0) {
+    if (pageData.total === 0) {
       setShowEmptyModal(true);
       return;
     }
@@ -145,7 +159,7 @@ export default function AdminDashboard({ token, onLogout }) {
   };
 
   const handleExportCsv = async () => {
-    if (registrations.length === 0) {
+    if (pageData.total === 0) {
       setShowEmptyModal(true);
       return;
     }
@@ -164,9 +178,9 @@ export default function AdminDashboard({ token, onLogout }) {
     setEditSaving(true);
     setEditError("");
     try {
-      const updated = await updateRegistration(token, editingRegistration.id, payload);
-      setRegistrations((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
+      await updateRegistration(token, editingRegistration.id, payload);
       setEditingRegistration(null);
+      load(filters, page);
     } catch (err) {
       setEditError(err.message);
     } finally {
@@ -177,9 +191,9 @@ export default function AdminDashboard({ token, onLogout }) {
   const handleConfirmStatus = async (note) => {
     setStatusSubmitting(true);
     try {
-      const updated = await updateRegistrationStatus(token, statusAction.registration.id, statusAction.action, note);
-      setRegistrations((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
+      await updateRegistrationStatus(token, statusAction.registration.id, statusAction.action, note);
       setStatusAction(null);
+      load(filters, page);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -191,14 +205,18 @@ export default function AdminDashboard({ token, onLogout }) {
     setDeleting(true);
     try {
       await deleteRegistration(token, deleteTarget.id);
-      setRegistrations((prev) => prev.filter((r) => r.id !== deleteTarget.id));
       setDeleteTarget(null);
+      load(filters, page);
     } catch (err) {
       setError(err.message);
     } finally {
       setDeleting(false);
     }
   };
+
+  const totalPages = Math.max(1, Math.ceil(pageData.total / PAGE_SIZE));
+  const rangeStart = pageData.total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, pageData.total);
 
   const handleLogout = () => {
     onLogout();
@@ -271,13 +289,39 @@ export default function AdminDashboard({ token, onLogout }) {
         {loading ? (
           <p className="admin-dashboard__loading">Loading...</p>
         ) : (
-          <RegistrationsTable
-            registrations={registrations}
-            onEdit={setEditingRegistration}
-            onApprove={(reg) => setStatusAction({ registration: reg, action: "approved" })}
-            onReject={(reg) => setStatusAction({ registration: reg, action: "rejected" })}
-            onDelete={setDeleteTarget}
-          />
+          <>
+            <RegistrationsTable
+              registrations={registrations}
+              onEdit={setEditingRegistration}
+              onApprove={(reg) => setStatusAction({ registration: reg, action: "approved" })}
+              onReject={(reg) => setStatusAction({ registration: reg, action: "rejected" })}
+              onDelete={setDeleteTarget}
+            />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14, flexWrap: "wrap", gap: 10 }}>
+              <span style={{ fontSize: "0.82rem", color: "var(--ink-soft)" }}>
+                {pageData.total === 0 ? "No results" : `Showing ${rangeStart}–${rangeEnd} of ${pageData.total}`}
+              </span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button
+                  className="filters-panel__reset"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >
+                  ← Prev
+                </button>
+                <span style={{ fontSize: "0.82rem", color: "var(--ink-soft)" }}>
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  className="filters-panel__reset"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </section>
 
@@ -318,7 +362,7 @@ export default function AdminDashboard({ token, onLogout }) {
         <ImportCsvModal
           token={token}
           onClose={() => setShowImportModal(false)}
-          onImported={() => load(filters)}
+          onImported={() => load(filters, page)}
         />
       )}
 

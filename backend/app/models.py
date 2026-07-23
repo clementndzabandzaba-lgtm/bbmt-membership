@@ -61,6 +61,7 @@ class Registration(Base):
     reviewed_at = Column(DateTime)
     reviewed_by = Column(String(100))
     seen_by_admin = Column(Boolean, nullable=False, default=False, server_default="false")
+    consent_given = Column(Boolean, nullable=False, default=False, server_default="false")
 
     children = relationship(
         "Child", back_populates="registration", cascade="all, delete-orphan"
@@ -120,3 +121,16 @@ class AdminUser(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Plain int, no FK cascade — history must survive the registration being deleted.
+    registration_id = Column(Integer, nullable=True, index=True)
+    registration_label = Column(String(255))
+    admin_username = Column(String(100), nullable=False)
+    action = Column(String(50), nullable=False)
+    detail = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

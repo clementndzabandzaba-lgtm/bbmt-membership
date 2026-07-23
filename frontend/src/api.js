@@ -196,6 +196,15 @@ export async function deleteDocument(token, documentId) {
   if (!res.ok) throw new Error("Failed to delete document");
 }
 
+export async function fetchAuditLog(token, registrationId) {
+  const res = await fetch(
+    `${API_URL}/api/admin/audit-log${buildQueryString({ registration_id: registrationId })}`,
+    { headers: authHeaders(token) }
+  );
+  if (!res.ok) throw new Error("Failed to load activity log");
+  return res.json();
+}
+
 export async function markRegistrationsSeen(token, ids = null) {
   const res = await fetch(`${API_URL}/api/admin/registrations/mark-seen`, {
     method: "POST",

@@ -92,7 +92,9 @@ export default function RegistrationFormFields({
             </div>
             <input
               required={req}
-              placeholder="ID number"
+              placeholder="ID number (13 digits)"
+              maxLength={13}
+              inputMode="numeric"
               value={form.original_member_id_number || ""}
               onChange={update("original_member_id_number")}
             />
@@ -112,7 +114,9 @@ export default function RegistrationFormFields({
               />
             </div>
             <input
-              placeholder="ID number"
+              placeholder="ID number (13 digits)"
+              maxLength={13}
+              inputMode="numeric"
               value={form.original_spouse_id_number || ""}
               onChange={update("original_spouse_id_number")}
             />
@@ -138,7 +142,9 @@ export default function RegistrationFormFields({
             </div>
             <input
               required={req}
-              placeholder="ID number"
+              placeholder="ID number (13 digits)"
+              maxLength={13}
+              inputMode="numeric"
               value={form.claimant_id_number || ""}
               onChange={update("claimant_id_number")}
             />
@@ -158,7 +164,9 @@ export default function RegistrationFormFields({
               />
             </div>
             <input
-              placeholder="ID number"
+              placeholder="ID number (13 digits)"
+              maxLength={13}
+              inputMode="numeric"
               value={form.claimant_spouse_id_number || ""}
               onChange={update("claimant_spouse_id_number")}
             />

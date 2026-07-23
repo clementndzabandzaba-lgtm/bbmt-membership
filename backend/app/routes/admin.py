@@ -11,14 +11,17 @@ from sqlalchemy.orm import Session, joinedload
 from ..auth import create_access_token, get_current_admin, verify_password
 from ..database import get_db
 from ..document_utils import validate_document_upload
-from ..models import AdminUser, Child, Document, GrandChild, Registration
+from ..models import AdminUser, AuditLog, Child, Document, GrandChild, Registration
+from ..rate_limit import rate_limit
 from ..schemas import (
+    AuditLogOut,
     DocumentOut,
     ImportRowError,
     ImportSummaryOut,
     LoginIn,
     MarkSeenIn,
     RegistrationIn,
+    RegistrationListOut,
     RegistrationOut,
     StatusUpdateIn,
     TokenOut,
@@ -64,7 +67,11 @@ REGISTRATION_COLUMNS = [
 IMPORTABLE_FIELDS = [field for field, _ in REGISTRATION_COLUMNS if field not in ("id", "created_at", "status")]
 
 
-@router.post("/login", response_model=TokenOut)
+@router.post(
+    "/login",
+    response_model=TokenOut,
+    dependencies=[Depends(rate_limit(max_requests=10, window_seconds=900))],
+)
 def login(payload: LoginIn, db: Session = Depends(get_db)):
     admin = db.query(AdminUser).filter(AdminUser.username == payload.username).first()
     if not admin or not verify_password(payload.password, admin.password_hash):
@@ -74,6 +81,31 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
         )
     token = create_access_token(subject=admin.username)
     return TokenOut(access_token=token)
+
+
+def _registration_label(reg: Registration) -> str:
+    title = reg.claimant_title or reg.original_member_title or ""
+    name = reg.claimant_name or reg.original_member_name or "Unknown"
+    return f"#{reg.id} {title} {name}".strip()
+
+
+def _log_action(
+    db: Session,
+    admin_username: str,
+    action: str,
+    registration_id: int | None = None,
+    registration_label: str | None = None,
+    detail: str | None = None,
+):
+    db.add(
+        AuditLog(
+            registration_id=registration_id,
+            registration_label=registration_label,
+            admin_username=admin_username,
+            action=action,
+            detail=detail,
+        )
+    )
 
 
 def _load_query(db: Session):
@@ -169,15 +201,48 @@ class RegistrationFilters:
         )
 
 
-@router.get("/registrations", response_model=list[RegistrationOut])
+@router.get("/registrations", response_model=RegistrationListOut)
 def list_registrations(
     filters: RegistrationFilters = Depends(),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(get_current_admin),
 ):
-    query = filters.apply(_load_query(db))
-    registrations = query.order_by(Registration.created_at.desc()).all()
-    return _annotate_is_new(registrations)
+    base_query = filters.apply(db.query(Registration))
+    total = base_query.count()
+    pending_count = base_query.filter(Registration.status == "pending").count()
+    new_count = base_query.filter(
+        Registration.status == "pending", Registration.seen_by_admin.is_(False)
+    ).count()
+    children_count = (
+        filters.apply(db.query(Child).join(Registration, Child.registration_id == Registration.id)).count()
+    )
+    grandchildren_count = (
+        filters.apply(
+            db.query(GrandChild).join(Registration, GrandChild.registration_id == Registration.id)
+        ).count()
+    )
+
+    items_query = filters.apply(_load_query(db))
+    registrations = (
+        items_query.order_by(Registration.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    _annotate_is_new(registrations)
+
+    return RegistrationListOut(
+        items=[RegistrationOut.model_validate(r, from_attributes=True) for r in registrations],
+        total=total,
+        page=page,
+        page_size=page_size,
+        pending_count=pending_count,
+        new_count=new_count,
+        children_count=children_count,
+        grandchildren_count=grandchildren_count,
+    )
 
 
 def _build_workbook(registrations: list[Registration]) -> Workbook:
@@ -276,7 +341,7 @@ def export_registrations_csv(
 async def import_registrations_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     raw = await file.read()
     text = raw.decode("utf-8-sig")
@@ -323,6 +388,14 @@ async def import_registrations_csv(
             skipped += 1
             errors.append(ImportRowError(row=row_number, error=str(exc)))
 
+    _log_action(
+        db,
+        admin.username,
+        "created_via_import",
+        None,
+        f"CSV import: {file.filename or 'upload'}",
+        detail=f"created={created} updated={updated} skipped={skipped}",
+    )
     db.commit()
     return ImportSummaryOut(created=created, updated=updated, skipped=skipped, errors=errors[:50])
 
@@ -361,7 +434,7 @@ def update_registration(
     registration_id: int,
     payload: RegistrationIn,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     registration = db.query(Registration).filter(Registration.id == registration_id).first()
     if not registration:
@@ -380,6 +453,8 @@ def update_registration(
     for grandchild in payload.grandchildren:
         if any(getattr(grandchild, field) for field in grandchild.model_fields):
             registration.grandchildren.append(GrandChild(**grandchild.model_dump()))
+
+    _log_action(db, admin.username, "edited", registration.id, _registration_label(registration))
 
     db.commit()
     db.refresh(registration)
@@ -403,6 +478,15 @@ def update_registration_status(
     registration.reviewed_at = datetime.utcnow()
     registration.reviewed_by = admin.username
 
+    _log_action(
+        db,
+        admin.username,
+        payload.status,
+        registration.id,
+        _registration_label(registration),
+        detail=payload.review_note,
+    )
+
     db.commit()
     db.refresh(registration)
     registration.is_new = registration.status == "pending" and not registration.seen_by_admin
@@ -413,11 +497,14 @@ def update_registration_status(
 def delete_registration(
     registration_id: int,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     registration = db.query(Registration).filter(Registration.id == registration_id).first()
     if not registration:
         raise HTTPException(status_code=404, detail="Registration not found")
+
+    _log_action(db, admin.username, "deleted", registration.id, _registration_label(registration))
+
     db.delete(registration)
     db.commit()
 
@@ -428,7 +515,7 @@ async def upload_admin_document(
     doc_type: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     registration = db.query(Registration).filter(Registration.id == registration_id).first()
     if not registration:
@@ -445,6 +532,9 @@ async def upload_admin_document(
         data=contents,
     )
     db.add(doc)
+    _log_action(
+        db, admin.username, "document_uploaded", registration.id, _registration_label(registration), detail=doc_type
+    )
     db.commit()
     db.refresh(doc)
     return doc
@@ -470,10 +560,34 @@ def get_document(
 def delete_document(
     document_id: int,
     db: Session = Depends(get_db),
-    _admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(get_current_admin),
 ):
     doc = db.query(Document).filter(Document.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    registration = db.query(Registration).filter(Registration.id == doc.registration_id).first()
+    _log_action(
+        db,
+        admin.username,
+        "document_deleted",
+        doc.registration_id,
+        _registration_label(registration) if registration else None,
+        detail=doc.doc_type,
+    )
+
     db.delete(doc)
     db.commit()
+
+
+@router.get("/audit-log", response_model=list[AuditLogOut])
+def list_audit_log(
+    registration_id: int | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    query = db.query(AuditLog)
+    if registration_id is not None:
+        query = query.filter(AuditLog.registration_id == registration_id)
+    return query.order_by(AuditLog.created_at.desc()).limit(limit).all()

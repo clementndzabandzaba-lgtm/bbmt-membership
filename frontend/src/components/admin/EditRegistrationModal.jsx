@@ -1,6 +1,7 @@
 import { useState } from "react";
 import RegistrationFormFields from "../RegistrationFormFields";
 import DocumentsPanel from "./DocumentsPanel";
+import ActivityLog from "./ActivityLog";
 
 const emptyChild = { name: "", id_number: "", gender: "", contact: "" };
 const emptyGrandChild = { name: "", id_number: "", gender: "" };
@@ -58,6 +59,8 @@ export default function EditRegistrationModal({ registration, token, onCancel, o
           />
 
           <DocumentsPanel registrationId={registration.id} token={token} documents={registration.documents} />
+
+          <ActivityLog registrationId={registration.id} token={token} />
 
           {error && <p className="reg-form__message reg-form__message--error">⚠ {error}</p>}
 

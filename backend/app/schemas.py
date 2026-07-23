@@ -1,7 +1,17 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+from .validators import is_valid_sa_id
+
+ID_NUMBER_ERROR = "Must be a valid 13-digit South African ID number"
+
+
+def _validate_id_number(value: Optional[str]) -> Optional[str]:
+    if value and not is_valid_sa_id(value):
+        raise ValueError(ID_NUMBER_ERROR)
+    return value
 
 
 class ChildIn(BaseModel):
@@ -10,11 +20,21 @@ class ChildIn(BaseModel):
     gender: Optional[str] = None
     contact: Optional[str] = None
 
+    @field_validator("id_number")
+    @classmethod
+    def _check_id_number(cls, value):
+        return _validate_id_number(value)
+
 
 class GrandChildIn(BaseModel):
     name: Optional[str] = None
     id_number: Optional[str] = None
     gender: Optional[str] = None
+
+    @field_validator("id_number")
+    @classmethod
+    def _check_id_number(cls, value):
+        return _validate_id_number(value)
 
 
 class RegistrationIn(BaseModel):
@@ -49,8 +69,20 @@ class RegistrationIn(BaseModel):
     family_representative: Optional[str] = None
     power_of_attorney: Optional[str] = None
 
+    consent_given: bool = False
+
     children: list[ChildIn] = []
     grandchildren: list[GrandChildIn] = []
+
+    @field_validator(
+        "original_member_id_number",
+        "original_spouse_id_number",
+        "claimant_id_number",
+        "claimant_spouse_id_number",
+    )
+    @classmethod
+    def _check_id_number(cls, value):
+        return _validate_id_number(value)
 
 
 class DocumentOut(BaseModel):
@@ -76,6 +108,29 @@ class RegistrationOut(RegistrationIn):
     seen_by_admin: bool = False
     is_new: Optional[bool] = None
     documents: list[DocumentOut] = []
+
+
+class RegistrationListOut(BaseModel):
+    items: list[RegistrationOut]
+    total: int
+    page: int
+    page_size: int
+    pending_count: int
+    new_count: int
+    children_count: int
+    grandchildren_count: int
+
+
+class AuditLogOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    registration_id: Optional[int] = None
+    registration_label: Optional[str] = None
+    admin_username: str
+    action: str
+    detail: Optional[str] = None
+    created_at: datetime
 
 
 class StatusUpdateIn(BaseModel):

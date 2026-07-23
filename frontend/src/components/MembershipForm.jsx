@@ -77,6 +77,7 @@ export default function MembershipForm() {
   const [grandchildren, setGrandchildren] = useState([{ ...emptyGrandChild }]);
   const [documents, setDocuments] = useState({ ...emptyDocuments });
   const [docErrors, setDocErrors] = useState({});
+  const [consentGiven, setConsentGiven] = useState(false);
   const [status, setStatus] = useState({ state: "idle", message: "" });
   const navigate = useNavigate();
 
@@ -116,7 +117,7 @@ export default function MembershipForm() {
     e.preventDefault();
     setStatus({ state: "submitting", message: "" });
     try {
-      const created = await submitRegistration({ ...form, children, grandchildren });
+      const created = await submitRegistration({ ...form, children, grandchildren, consent_given: consentGiven });
 
       const filesToUpload = Object.entries(documents).filter(([, file]) => file);
       let failedUploads = 0;
@@ -139,6 +140,7 @@ export default function MembershipForm() {
       setGrandchildren([{ ...emptyGrandChild }]);
       setDocuments({ ...emptyDocuments });
       setDocErrors({});
+      setConsentGiven(false);
     } catch (err) {
       setStatus({ state: "error", message: err.message });
     }
@@ -223,6 +225,30 @@ export default function MembershipForm() {
             />
           ))}
         </div>
+      </section>
+
+      <section className="reg-form__section">
+        <div className="reg-form__section-header">
+          <h3>Privacy &amp; Consent</h3>
+        </div>
+        <p className="reg-form__subtitle" style={{ marginBottom: 12 }}>
+          The information on this form, including ID numbers and any attached documents, is collected
+          solely for BBMTC membership administration. It is retained under the Council's record-keeping
+          policy and is only accessible to authorised administrators.
+        </p>
+        <label style={{ display: "flex", flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+          <input
+            type="checkbox"
+            required
+            checked={consentGiven}
+            onChange={(e) => setConsentGiven(e.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span style={{ fontWeight: 500, color: "var(--ink)" }}>
+            I consent to the Bakgatla Ba Mosetlha Traditional Council collecting and processing this
+            information for membership registration purposes.
+          </span>
+        </label>
       </section>
 
       {status.state === "error" && (
