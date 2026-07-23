@@ -230,21 +230,27 @@ export default function AdminDashboard({ token, onLogout }) {
         <img src={monkeySilhouette} className="watermark__monkey" alt="" />
       </div>
 
-      <header className="admin-dashboard__topbar">
-        <div className="admin-dashboard__brand">
-          <img src={crestLogo} alt="BBMTC crest" className="admin-dashboard__crest" />
-          <div>
-            <p className="admin-dashboard__eyebrow">BBMTC Admin</p>
-            <p className="admin-dashboard__welcome">Welcome back, <strong>{username}</strong></p>
+      <header className="admin-letterhead">
+        <div className="admin-letterhead__row">
+          <div className="admin-dashboard__brand">
+            <img src={crestLogo} alt="BBMTC crest" className="admin-dashboard__crest" />
+            <div>
+              <p className="admin-letterhead__wordmark">BBMTC</p>
+              <h1 className="admin-letterhead__title">
+                Bakgatla Ba Mosetlha <span>Traditional Council</span>
+              </h1>
+              <p className="admin-letterhead__subtitle">Membership Administration System</p>
+            </div>
           </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          {stats.newCount > 0 && (
-            <span className="admin-dashboard__notify">🔔 {stats.newCount} new registration{stats.newCount > 1 ? "s" : ""}</span>
-          )}
-          <button onClick={handleLogout} className="admin-dashboard__logout">
-            Log out
-          </button>
+          <div className="admin-letterhead__actions">
+            <p className="admin-dashboard__welcome">Signed in as <strong>{username}</strong></p>
+            {stats.newCount > 0 && (
+              <span className="admin-dashboard__notify">{stats.newCount} new registration{stats.newCount > 1 ? "s" : ""} pending review</span>
+            )}
+            <button onClick={handleLogout} className="admin-dashboard__logout">
+              Log out
+            </button>
+          </div>
         </div>
       </header>
 
