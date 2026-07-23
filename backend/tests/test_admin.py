@@ -1,7 +1,39 @@
 import csv
 import io
 
+from sqlalchemy.orm import sessionmaker
+
+from app.models import Child, Registration
+
 from .conftest import ADMIN_PASSWORD, ADMIN_USERNAME, VALID_SA_IDS, make_registration_payload
+
+
+def test_read_registration_with_legacy_invalid_id_number(client, auth_headers, test_engine):
+    """Regression test: RegistrationOut must not re-validate ID numbers already
+    stored in the DB (e.g. legacy/imported data predating the checksum rule).
+    A record like this previously 500'd the entire list/detail endpoints."""
+    session_local = sessionmaker(bind=test_engine)
+    db = session_local()
+    reg = Registration(
+        kgoro="Legacy",
+        claimant_name="Legacy Person",
+        claimant_id_number="1234567890123",  # fails the SA ID checksum
+        consent_given=True,
+    )
+    reg.children.append(Child(name="Legacy Child", id_number="9999999999999", gender="Male"))
+    db.add(reg)
+    db.commit()
+    reg_id = reg.id
+    db.close()
+
+    res = client.get("/api/admin/registrations", headers=auth_headers)
+    assert res.status_code == 200
+    assert any(item["id"] == reg_id for item in res.json()["items"])
+
+    res_single = client.get(f"/api/admin/registrations/{reg_id}", headers=auth_headers)
+    assert res_single.status_code == 200
+    assert res_single.json()["claimant_id_number"] == "1234567890123"
+    assert res_single.json()["children"][0]["id_number"] == "9999999999999"
 
 
 def test_login_success(client, admin_user):

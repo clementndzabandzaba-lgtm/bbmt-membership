@@ -97,6 +97,23 @@ class DocumentOut(BaseModel):
     uploaded_at: datetime
 
 
+class ChildOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    name: Optional[str] = None
+    id_number: Optional[str] = None
+    gender: Optional[str] = None
+    contact: Optional[str] = None
+
+
+class GrandChildOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    name: Optional[str] = None
+    id_number: Optional[str] = None
+    gender: Optional[str] = None
+
+
 class RegistrationOut(RegistrationIn):
     model_config = ConfigDict(from_attributes=True)
 
@@ -110,6 +127,25 @@ class RegistrationOut(RegistrationIn):
     seen_by_admin: bool = False
     is_new: Optional[bool] = None
     documents: list[DocumentOut] = []
+
+    # Reading existing records back out must not re-validate previously stored
+    # data against the (newer, stricter) checksum rules — only new input,
+    # validated via RegistrationIn/ChildIn/GrandChildIn, is checked. Without
+    # these overrides, any pre-existing record with a non-conforming ID number
+    # would 500 the moment it's read back, since RegistrationOut inherits
+    # RegistrationIn's validators.
+    children: list[ChildOut] = []
+    grandchildren: list[GrandChildOut] = []
+
+    @field_validator(
+        "original_member_id_number",
+        "original_spouse_id_number",
+        "claimant_id_number",
+        "claimant_spouse_id_number",
+    )
+    @classmethod
+    def _check_id_number(cls, value):
+        return value
 
 
 class RegistrationListOut(BaseModel):
