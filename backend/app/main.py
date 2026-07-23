@@ -5,11 +5,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, engine
+from .migrations import run_startup_migrations
 from .routes import admin, public
 
 load_dotenv()
 
 Base.metadata.create_all(bind=engine)
+run_startup_migrations(engine)
 
 app = FastAPI(title="BBMT Membership Registration API")
 

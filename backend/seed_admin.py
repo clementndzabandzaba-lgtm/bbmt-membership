@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from app.auth import hash_password
 from app.database import Base, SessionLocal, engine
+from app.migrations import run_startup_migrations
 from app.models import AdminUser
 
 load_dotenv()
@@ -16,6 +17,7 @@ load_dotenv()
 
 def main():
     Base.metadata.create_all(bind=engine)
+    run_startup_migrations(engine)
 
     username = os.getenv("ADMIN_USERNAME", "admin")
     password = os.getenv("ADMIN_PASSWORD")

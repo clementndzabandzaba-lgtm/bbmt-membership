@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { submitRegistration } from "../api";
+import { submitRegistration, uploadPublicDocument } from "../api";
+import RegistrationFormFields from "./RegistrationFormFields";
 import crestLogo from "../assets/brand/crest.png";
 import monkeyBanner from "../assets/brand/monkey-banner.png";
 import monkeySilhouette from "../assets/brand/monkey-silhouette.png";
@@ -42,16 +43,31 @@ const initialForm = {
   power_of_attorney: "",
 };
 
-function TitleSelect({ label, value, onChange, options = ["Mr", "Mrs", "Ms"], required = true }) {
+const DOCUMENT_SLOTS = [
+  { key: "id_copy", label: "Certified ID Copy" },
+  { key: "birth_certificate", label: "Birth Certificate" },
+  { key: "death_certificate", label: "Death Certificate" },
+];
+
+const emptyDocuments = { id_copy: null, birth_certificate: null, death_certificate: null };
+
+function DocumentUploadSlot({ slotKey, label, file, error, onSelect }) {
+  const previewUrl = file ? URL.createObjectURL(file) : null;
   return (
-    <select value={value} onChange={onChange} aria-label={label} required={required}>
-      <option value="">Title</option>
-      {options.map((opt) => (
-        <option key={opt} value={opt}>
-          {opt}
-        </option>
-      ))}
-    </select>
+    <label className={`doc-upload-slot${file ? " doc-upload-slot--filled" : ""}`}>
+      <input
+        type="file"
+        accept="image/png"
+        onChange={(e) => onSelect(slotKey, e.target.files?.[0] || null)}
+      />
+      {previewUrl ? (
+        <img src={previewUrl} alt="" className="doc-thumb" />
+      ) : (
+        <span aria-hidden="true">📎</span>
+      )}
+      <span className="doc-upload-slot__label">{file ? file.name : label}</span>
+      {error && <span className="doc-upload-slot__error">{error}</span>}
+    </label>
   );
 }
 
@@ -59,6 +75,8 @@ export default function MembershipForm() {
   const [form, setForm] = useState(initialForm);
   const [children, setChildren] = useState([{ ...emptyChild }]);
   const [grandchildren, setGrandchildren] = useState([{ ...emptyGrandChild }]);
+  const [documents, setDocuments] = useState({ ...emptyDocuments });
+  const [docErrors, setDocErrors] = useState({});
   const [status, setStatus] = useState({ state: "idle", message: "" });
   const navigate = useNavigate();
 
@@ -84,15 +102,43 @@ export default function MembershipForm() {
   const removeGrandchildRow = (index) =>
     setGrandchildren(grandchildren.filter((_, i) => i !== index));
 
+  const selectDocument = (slotKey, file) => {
+    if (file && file.type !== "image/png") {
+      setDocErrors({ ...docErrors, [slotKey]: "Only PNG files are accepted" });
+      setDocuments({ ...documents, [slotKey]: null });
+      return;
+    }
+    setDocErrors({ ...docErrors, [slotKey]: null });
+    setDocuments({ ...documents, [slotKey]: file });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatus({ state: "submitting", message: "" });
     try {
-      await submitRegistration({ ...form, children, grandchildren });
-      setStatus({ state: "success", message: "Registration submitted successfully." });
+      const created = await submitRegistration({ ...form, children, grandchildren });
+
+      const filesToUpload = Object.entries(documents).filter(([, file]) => file);
+      let failedUploads = 0;
+      if (filesToUpload.length > 0) {
+        const results = await Promise.allSettled(
+          filesToUpload.map(([docType, file]) => uploadPublicDocument(created.id, docType, file))
+        );
+        failedUploads = results.filter((r) => r.status === "rejected").length;
+      }
+
+      setStatus({
+        state: "success",
+        message:
+          failedUploads > 0
+            ? `Registration submitted successfully, but ${failedUploads} document${failedUploads > 1 ? "s" : ""} failed to upload — please contact the office to submit them separately.`
+            : "Registration submitted successfully.",
+      });
       setForm(initialForm);
       setChildren([{ ...emptyChild }]);
       setGrandchildren([{ ...emptyGrandChild }]);
+      setDocuments({ ...emptyDocuments });
+      setDocErrors({});
     } catch (err) {
       setStatus({ state: "error", message: err.message });
     }
@@ -144,259 +190,38 @@ export default function MembershipForm() {
         <p className="letterhead__form-title">Membership Registration Form</p>
       </header>
 
-      <section className="reg-form__section">
-        <div className="reg-form__section-header">
-          <h3>Registration Details</h3>
-        </div>
-        <div className="grid grid--3">
-          <label>
-            Kgoro
-            <input required value={form.kgoro} onChange={update("kgoro")} />
-          </label>
-          <label>
-            Mokgomane
-            <input required value={form.mokgomane} onChange={update("mokgomane")} />
-          </label>
-          <label>
-            Section
-            <input required value={form.section} onChange={update("section")} />
-          </label>
-          <label>
-            Receipt Number
-            <input required value={form.receipt_number} onChange={update("receipt_number")} />
-          </label>
-          <label>
-            Reference No
-            <input required value={form.reference_no} onChange={update("reference_no")} />
-          </label>
-          <label>
-            Stand No
-            <input required value={form.stand_no} onChange={update("stand_no")} />
-          </label>
-          <label>
-            Zone
-            <input required value={form.zone} onChange={update("zone")} />
-          </label>
-        </div>
-      </section>
+      <RegistrationFormFields
+        form={form}
+        update={update}
+        childrenList={children}
+        updateChild={updateChild}
+        addChildRow={addChildRow}
+        removeChildRow={removeChildRow}
+        grandchildren={grandchildren}
+        updateGrandchild={updateGrandchild}
+        addGrandchildRow={addGrandchildRow}
+        removeGrandchildRow={removeGrandchildRow}
+        requireFields
+      />
 
       <section className="reg-form__section">
         <div className="reg-form__section-header">
-          <h3>Main Member <span className="reg-form__subtitle">(Originally Dispossessed)</span></h3>
+          <h3>Supporting Documents <span className="reg-form__subtitle">PNG only, optional</span></h3>
         </div>
-        <div className="grid grid--2">
-          <div className="name-field">
-            <span>Main Member</span>
-            <div className="name-field__row">
-              <TitleSelect value={form.original_member_title} onChange={update("original_member_title")} />
-              <input
-                required
-                placeholder="Full name"
-                value={form.original_member_name}
-                onChange={update("original_member_name")}
-              />
-            </div>
-            <input
-              required
-              placeholder="ID number"
-              value={form.original_member_id_number}
-              onChange={update("original_member_id_number")}
+        <p className="reg-form__subtitle" style={{ marginBottom: 14 }}>
+          Attach certified copies to help us verify this registration faster.
+        </p>
+        <div className="doc-upload-grid">
+          {DOCUMENT_SLOTS.map(({ key, label }) => (
+            <DocumentUploadSlot
+              key={key}
+              slotKey={key}
+              label={label}
+              file={documents[key]}
+              error={docErrors[key]}
+              onSelect={selectDocument}
             />
-          </div>
-          <div className="name-field">
-            <span>Spouse</span>
-            <div className="name-field__row">
-              <TitleSelect
-                value={form.original_spouse_title}
-                onChange={update("original_spouse_title")}
-                options={["Mr", "Mrs"]}
-              />
-              <input
-                required
-                placeholder="Full name"
-                value={form.original_spouse_name}
-                onChange={update("original_spouse_name")}
-              />
-            </div>
-            <input
-              required
-              placeholder="ID number"
-              value={form.original_spouse_id_number}
-              onChange={update("original_spouse_id_number")}
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="reg-form__section">
-        <div className="reg-form__section-header">
-          <h3>Main Member <span className="reg-form__subtitle">(Main Claimant)</span></h3>
-        </div>
-        <div className="grid grid--2">
-          <div className="name-field">
-            <span>Main Member</span>
-            <div className="name-field__row">
-              <TitleSelect value={form.claimant_title} onChange={update("claimant_title")} />
-              <input
-                required
-                placeholder="Full name"
-                value={form.claimant_name}
-                onChange={update("claimant_name")}
-              />
-            </div>
-            <input
-              required
-              placeholder="ID number"
-              value={form.claimant_id_number}
-              onChange={update("claimant_id_number")}
-            />
-          </div>
-          <div className="name-field">
-            <span>Spouse</span>
-            <div className="name-field__row">
-              <TitleSelect
-                value={form.claimant_spouse_title}
-                onChange={update("claimant_spouse_title")}
-                options={["Mr", "Mrs"]}
-              />
-              <input
-                required
-                placeholder="Full name"
-                value={form.claimant_spouse_name}
-                onChange={update("claimant_spouse_name")}
-              />
-            </div>
-            <input
-              required
-              placeholder="ID number"
-              value={form.claimant_spouse_id_number}
-              onChange={update("claimant_spouse_id_number")}
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="reg-form__section">
-        <div className="reg-form__section-header">
-          <h3>Contact Details</h3>
-        </div>
-        <div className="grid grid--2">
-          <label>
-            Relationship to Odi
-            <input required value={form.relationship_to_odi} onChange={update("relationship_to_odi")} />
-          </label>
-          <label>
-            Email
-            <input required type="email" value={form.email} onChange={update("email")} />
-          </label>
-        </div>
-      </section>
-
-      <section className="reg-form__section">
-        <div className="reg-form__section-header">
-          <h3>Children</h3>
-          <button type="button" className="reg-form__add-btn" onClick={addChildRow}>+ Add child</button>
-        </div>
-        <div className="reg-table-wrap">
-        <table className="reg-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>ID Number</th>
-              <th>Gender</th>
-              <th>Contact</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {children.map((child, i) => (
-              <tr key={i}>
-                <td><input required value={child.name} onChange={updateChild(i, "name")} /></td>
-                <td><input required value={child.id_number} onChange={updateChild(i, "id_number")} /></td>
-                <td>
-                  <select required value={child.gender} onChange={updateChild(i, "gender")}>
-                    <option value="">-</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                  </select>
-                </td>
-                <td><input required value={child.contact} onChange={updateChild(i, "contact")} /></td>
-                <td>
-                  {children.length > 1 && (
-                    <button type="button" className="reg-form__remove-btn" onClick={() => removeChildRow(i)} aria-label="Remove child row">✕</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
-      </section>
-
-      <section className="reg-form__section">
-        <div className="reg-form__section-header">
-          <h3>Grandchildren</h3>
-          <button type="button" className="reg-form__add-btn" onClick={addGrandchildRow}>+ Add grandchild</button>
-        </div>
-        <div className="reg-table-wrap">
-        <table className="reg-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>ID Number</th>
-              <th>Gender</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {grandchildren.map((gc, i) => (
-              <tr key={i}>
-                <td><input required value={gc.name} onChange={updateGrandchild(i, "name")} /></td>
-                <td><input required value={gc.id_number} onChange={updateGrandchild(i, "id_number")} /></td>
-                <td>
-                  <select required value={gc.gender} onChange={updateGrandchild(i, "gender")}>
-                    <option value="">-</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                  </select>
-                </td>
-                <td>
-                  {grandchildren.length > 1 && (
-                    <button type="button" className="reg-form__remove-btn" onClick={() => removeGrandchildRow(i)} aria-label="Remove grandchild row">✕</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
-      </section>
-
-      <section className="reg-form__section">
-        <div className="reg-form__section-header">
-          <h3>Origin &amp; Additional Details</h3>
-        </div>
-        <div className="grid grid--2">
-          <label>
-            Place of Origin / Ancestral Place of Origin
-            <input required value={form.place_of_origin} onChange={update("place_of_origin")} />
-          </label>
-          <label>
-            Business Details / Additional Details
-            <input required value={form.business_details} onChange={update("business_details")} />
-          </label>
-          <label>
-            Origin / Ethnicity
-            <input required value={form.origin_ethnicity} onChange={update("origin_ethnicity")} />
-          </label>
-          <label>
-            Family Representative
-            <input required value={form.family_representative} onChange={update("family_representative")} />
-          </label>
-          <label>
-            Power of Attorney
-            <input required value={form.power_of_attorney} onChange={update("power_of_attorney")} />
-          </label>
+          ))}
         </div>
       </section>
 

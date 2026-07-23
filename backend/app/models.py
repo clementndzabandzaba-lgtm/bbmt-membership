@@ -1,8 +1,10 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Integer,
+    LargeBinary,
     String,
     Text,
     DateTime,
@@ -54,11 +56,20 @@ class Registration(Base):
     family_representative = Column(String(200))
     power_of_attorney = Column(String(200))
 
+    status = Column(String(20), nullable=False, default="pending", server_default="pending")
+    review_note = Column(Text)
+    reviewed_at = Column(DateTime)
+    reviewed_by = Column(String(100))
+    seen_by_admin = Column(Boolean, nullable=False, default=False, server_default="false")
+
     children = relationship(
         "Child", back_populates="registration", cascade="all, delete-orphan"
     )
     grandchildren = relationship(
         "GrandChild", back_populates="registration", cascade="all, delete-orphan"
+    )
+    documents = relationship(
+        "Document", back_populates="registration", cascade="all, delete-orphan"
     )
 
 
@@ -85,6 +96,22 @@ class GrandChild(Base):
     gender = Column(String(10))
 
     registration = relationship("Registration", back_populates="grandchildren")
+
+
+class Document(Base):
+    __tablename__ = "documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    registration_id = Column(
+        Integer, ForeignKey("registrations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    doc_type = Column(String(30), nullable=False)
+    filename = Column(String(255))
+    content_type = Column(String(100), nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    registration = relationship("Registration", back_populates="documents")
 
 
 class AdminUser(Base):

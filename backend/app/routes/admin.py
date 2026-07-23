@@ -1,21 +1,35 @@
+import csv
 import io
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from ..auth import create_access_token, get_current_admin, verify_password
 from ..database import get_db
-from ..models import AdminUser, Registration
-from ..schemas import LoginIn, RegistrationOut, TokenOut
+from ..document_utils import validate_document_upload
+from ..models import AdminUser, Child, Document, GrandChild, Registration
+from ..schemas import (
+    DocumentOut,
+    ImportRowError,
+    ImportSummaryOut,
+    LoginIn,
+    MarkSeenIn,
+    RegistrationIn,
+    RegistrationOut,
+    StatusUpdateIn,
+    TokenOut,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 REGISTRATION_COLUMNS = [
     ("id", "ID"),
     ("created_at", "Submitted At"),
+    ("status", "Status"),
     ("kgoro", "Kgoro"),
     ("mokgomane", "Mokgomane"),
     ("section", "Section"),
@@ -44,6 +58,11 @@ REGISTRATION_COLUMNS = [
     ("power_of_attorney", "Power of Attorney"),
 ]
 
+# Columns that are safe to bulk-import/update from a CSV. Excludes id/created_at
+# (id is only used to detect an update-vs-create) and status/review fields
+# (reviewed separately through the approve/reject workflow, not spreadsheet edits).
+IMPORTABLE_FIELDS = [field for field, _ in REGISTRATION_COLUMNS if field not in ("id", "created_at", "status")]
+
 
 @router.post("/login", response_model=TokenOut)
 def login(payload: LoginIn, db: Session = Depends(get_db)):
@@ -57,30 +76,111 @@ def login(payload: LoginIn, db: Session = Depends(get_db)):
     return TokenOut(access_token=token)
 
 
-@router.get("/registrations", response_model=list[RegistrationOut])
-def list_registrations(
-    db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin)
-):
-    registrations = (
-        db.query(Registration)
-        .options(joinedload(Registration.children), joinedload(Registration.grandchildren))
-        .order_by(Registration.created_at.desc())
-        .all()
+def _load_query(db: Session):
+    return db.query(Registration).options(
+        joinedload(Registration.children),
+        joinedload(Registration.grandchildren),
+        joinedload(Registration.documents),
     )
+
+
+def _annotate_is_new(registrations: list[Registration]) -> list[Registration]:
+    for reg in registrations:
+        reg.is_new = reg.status == "pending" and not reg.seen_by_admin
     return registrations
 
 
-@router.get("/registrations/export")
-def export_registrations(
-    db: Session = Depends(get_db), _admin: AdminUser = Depends(get_current_admin)
+def _apply_filters(
+    query,
+    status_filter=None,
+    kgoro=None,
+    section=None,
+    zone=None,
+    place_of_origin=None,
+    origin_ethnicity=None,
+    q=None,
+    date_from=None,
+    date_to=None,
 ):
-    registrations = (
-        db.query(Registration)
-        .options(joinedload(Registration.children), joinedload(Registration.grandchildren))
-        .order_by(Registration.created_at.asc())
-        .all()
-    )
+    if status_filter:
+        query = query.filter(Registration.status == status_filter)
+    if kgoro:
+        query = query.filter(Registration.kgoro.ilike(f"%{kgoro}%"))
+    if section:
+        query = query.filter(Registration.section.ilike(f"%{section}%"))
+    if zone:
+        query = query.filter(Registration.zone.ilike(f"%{zone}%"))
+    if place_of_origin:
+        query = query.filter(Registration.place_of_origin.ilike(f"%{place_of_origin}%"))
+    if origin_ethnicity:
+        query = query.filter(Registration.origin_ethnicity.ilike(f"%{origin_ethnicity}%"))
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            or_(
+                Registration.claimant_name.ilike(like),
+                Registration.original_member_name.ilike(like),
+                Registration.claimant_id_number.ilike(like),
+                Registration.original_member_id_number.ilike(like),
+            )
+        )
+    if date_from:
+        query = query.filter(Registration.created_at >= date_from)
+    if date_to:
+        query = query.filter(Registration.created_at <= date_to)
+    return query
 
+
+class RegistrationFilters:
+    def __init__(
+        self,
+        status: str | None = Query(None),
+        kgoro: str | None = Query(None),
+        section: str | None = Query(None),
+        zone: str | None = Query(None),
+        place_of_origin: str | None = Query(None),
+        origin_ethnicity: str | None = Query(None),
+        q: str | None = Query(None),
+        date_from: datetime | None = Query(None),
+        date_to: datetime | None = Query(None),
+    ):
+        self.status = status
+        self.kgoro = kgoro
+        self.section = section
+        self.zone = zone
+        self.place_of_origin = place_of_origin
+        self.origin_ethnicity = origin_ethnicity
+        self.q = q
+        self.date_from = date_from
+        self.date_to = date_to
+
+    def apply(self, query):
+        return _apply_filters(
+            query,
+            status_filter=self.status,
+            kgoro=self.kgoro,
+            section=self.section,
+            zone=self.zone,
+            place_of_origin=self.place_of_origin,
+            origin_ethnicity=self.origin_ethnicity,
+            q=self.q,
+            date_from=self.date_from,
+            date_to=self.date_to,
+        )
+
+
+@router.get("/registrations", response_model=list[RegistrationOut])
+def list_registrations(
+    filters: RegistrationFilters = Depends(),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    query = filters.apply(_load_query(db))
+    registrations = query.order_by(Registration.created_at.desc()).all()
+    return _annotate_is_new(registrations)
+
+
+def _build_workbook(registrations: list[Registration]) -> Workbook:
     wb = Workbook()
 
     main_sheet = wb.active
@@ -116,6 +216,21 @@ def export_registrations(
             length = max((len(str(cell.value)) if cell.value is not None else 0) for cell in column_cells)
             sheet.column_dimensions[column_cells[0].column_letter].width = min(max(length + 2, 10), 45)
 
+    return wb
+
+
+@router.get("/registrations/export")
+def export_registrations(
+    filters: RegistrationFilters = Depends(),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    query = filters.apply(
+        db.query(Registration).options(joinedload(Registration.children), joinedload(Registration.grandchildren))
+    )
+    registrations = query.order_by(Registration.created_at.asc()).all()
+
+    wb = _build_workbook(registrations)
     buffer = io.BytesIO()
     wb.save(buffer)
     buffer.seek(0)
@@ -126,3 +241,239 @@ def export_registrations(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/registrations/export.csv")
+def export_registrations_csv(
+    filters: RegistrationFilters = Depends(),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    query = filters.apply(db.query(Registration))
+    registrations = query.order_by(Registration.created_at.asc()).all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow([label for _, label in REGISTRATION_COLUMNS])
+    for reg in registrations:
+        row = []
+        for field, _ in REGISTRATION_COLUMNS:
+            value = getattr(reg, field)
+            if isinstance(value, datetime):
+                value = value.strftime("%Y-%m-%d %H:%M:%S")
+            row.append(value)
+        writer.writerow(row)
+
+    filename = f"bbmt_membership_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/registrations/import", response_model=ImportSummaryOut)
+async def import_registrations_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    raw = await file.read()
+    text = raw.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+
+    importable_set = set(IMPORTABLE_FIELDS)
+    label_to_field = {label: field for field, label in REGISTRATION_COLUMNS if field in importable_set}
+    known_headers = set(label_to_field) | importable_set | {"id", "ID"}
+
+    created = 0
+    updated = 0
+    skipped = 0
+    errors: list[ImportRowError] = []
+
+    for row_number, row in enumerate(reader, start=2):  # header is row 1
+        try:
+            mapped = {}
+            for header, value in row.items():
+                if header is None:
+                    continue
+                field = label_to_field.get(header, header if header in IMPORTABLE_FIELDS else None)
+                if field:
+                    mapped[field] = value.strip() if isinstance(value, str) else value
+                elif header not in known_headers and header.strip():
+                    pass  # ignore unrecognized columns rather than failing the row
+
+            raw_id = row.get("ID") or row.get("id")
+            registration = None
+            if raw_id and str(raw_id).strip():
+                try:
+                    registration = db.query(Registration).filter(Registration.id == int(raw_id)).first()
+                except ValueError:
+                    registration = None
+
+            if registration:
+                for field, value in mapped.items():
+                    setattr(registration, field, value or None)
+                updated += 1
+            else:
+                registration = Registration(**{k: (v or None) for k, v in mapped.items()})
+                db.add(registration)
+                created += 1
+        except Exception as exc:  # noqa: BLE001 - collect per-row errors, don't abort the batch
+            skipped += 1
+            errors.append(ImportRowError(row=row_number, error=str(exc)))
+
+    db.commit()
+    return ImportSummaryOut(created=created, updated=updated, skipped=skipped, errors=errors[:50])
+
+
+@router.post("/registrations/mark-seen")
+def mark_registrations_seen(
+    payload: MarkSeenIn,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    query = db.query(Registration)
+    if payload.ids:
+        query = query.filter(Registration.id.in_(payload.ids))
+    else:
+        query = query.filter(Registration.status == "pending")
+    query.update({Registration.seen_by_admin: True}, synchronize_session=False)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/registrations/{registration_id}", response_model=RegistrationOut)
+def get_registration(
+    registration_id: int,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    registration = _load_query(db).filter(Registration.id == registration_id).first()
+    if not registration:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    registration.is_new = registration.status == "pending" and not registration.seen_by_admin
+    return registration
+
+
+@router.patch("/registrations/{registration_id}", response_model=RegistrationOut)
+def update_registration(
+    registration_id: int,
+    payload: RegistrationIn,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    registration = db.query(Registration).filter(Registration.id == registration_id).first()
+    if not registration:
+        raise HTTPException(status_code=404, detail="Registration not found")
+
+    data = payload.model_dump(exclude={"children", "grandchildren"})
+    for field, value in data.items():
+        setattr(registration, field, value)
+
+    registration.children.clear()
+    for child in payload.children:
+        if any(getattr(child, field) for field in child.model_fields):
+            registration.children.append(Child(**child.model_dump()))
+
+    registration.grandchildren.clear()
+    for grandchild in payload.grandchildren:
+        if any(getattr(grandchild, field) for field in grandchild.model_fields):
+            registration.grandchildren.append(GrandChild(**grandchild.model_dump()))
+
+    db.commit()
+    db.refresh(registration)
+    registration.is_new = registration.status == "pending" and not registration.seen_by_admin
+    return registration
+
+
+@router.patch("/registrations/{registration_id}/status", response_model=RegistrationOut)
+def update_registration_status(
+    registration_id: int,
+    payload: StatusUpdateIn,
+    db: Session = Depends(get_db),
+    admin: AdminUser = Depends(get_current_admin),
+):
+    registration = db.query(Registration).filter(Registration.id == registration_id).first()
+    if not registration:
+        raise HTTPException(status_code=404, detail="Registration not found")
+
+    registration.status = payload.status
+    registration.review_note = payload.review_note
+    registration.reviewed_at = datetime.utcnow()
+    registration.reviewed_by = admin.username
+
+    db.commit()
+    db.refresh(registration)
+    registration.is_new = registration.status == "pending" and not registration.seen_by_admin
+    return registration
+
+
+@router.delete("/registrations/{registration_id}", status_code=204)
+def delete_registration(
+    registration_id: int,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    registration = db.query(Registration).filter(Registration.id == registration_id).first()
+    if not registration:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    db.delete(registration)
+    db.commit()
+
+
+@router.post("/registrations/{registration_id}/documents", response_model=DocumentOut, status_code=201)
+async def upload_admin_document(
+    registration_id: int,
+    doc_type: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    registration = db.query(Registration).filter(Registration.id == registration_id).first()
+    if not registration:
+        raise HTTPException(status_code=404, detail="Registration not found")
+
+    contents = await file.read()
+    validate_document_upload(doc_type, file, contents)
+
+    doc = Document(
+        registration_id=registration_id,
+        doc_type=doc_type,
+        filename=file.filename,
+        content_type=file.content_type,
+        data=contents,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+@router.get("/documents/{document_id}")
+def get_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return StreamingResponse(
+        io.BytesIO(doc.data),
+        media_type=doc.content_type,
+        headers={"Content-Disposition": f'inline; filename="{doc.filename or "document.png"}"'},
+    )
+
+
+@router.delete("/documents/{document_id}", status_code=204)
+def delete_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    _admin: AdminUser = Depends(get_current_admin),
+):
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    db.delete(doc)
+    db.commit()

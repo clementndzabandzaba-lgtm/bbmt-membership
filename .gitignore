@@ -25,3 +25,6 @@ frontend/*.local
 
 # Logs
 *.log
+
+# Local tooling config
+.claude/

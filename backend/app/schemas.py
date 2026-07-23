@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -53,11 +53,50 @@ class RegistrationIn(BaseModel):
     grandchildren: list[GrandChildIn] = []
 
 
+class DocumentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    registration_id: int
+    doc_type: str
+    filename: Optional[str] = None
+    content_type: str
+    uploaded_at: datetime
+
+
 class RegistrationOut(RegistrationIn):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     created_at: datetime
+    status: str = "pending"
+    review_note: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    reviewed_by: Optional[str] = None
+    seen_by_admin: bool = False
+    is_new: Optional[bool] = None
+    documents: list[DocumentOut] = []
+
+
+class StatusUpdateIn(BaseModel):
+    status: Literal["pending", "approved", "rejected"]
+    review_note: Optional[str] = None
+
+
+class ImportRowError(BaseModel):
+    row: int
+    error: str
+
+
+class ImportSummaryOut(BaseModel):
+    created: int
+    updated: int
+    skipped: int
+    errors: list[ImportRowError] = []
+
+
+class MarkSeenIn(BaseModel):
+    ids: Optional[list[int]] = None
 
 
 class LoginIn(BaseModel):
