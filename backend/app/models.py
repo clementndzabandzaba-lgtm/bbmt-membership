@@ -62,6 +62,11 @@ class Registration(Base):
     reviewed_by = Column(String(100))
     seen_by_admin = Column(Boolean, nullable=False, default=False, server_default="false")
     consent_given = Column(Boolean, nullable=False, default=False, server_default="false")
+    update_reference = Column(String(50))
+
+    @property
+    def membership_number(self) -> str:
+        return f"BBMT-{self.id:06d}"
 
     children = relationship(
         "Child", back_populates="registration", cascade="all, delete-orphan"

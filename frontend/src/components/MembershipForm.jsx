@@ -18,6 +18,7 @@ const initialForm = {
   reference_no: "",
   stand_no: "",
   zone: "",
+  update_reference: "",
 
   original_member_title: "",
   original_member_name: "",
@@ -43,25 +44,31 @@ const initialForm = {
   power_of_attorney: "",
 };
 
-const DOCUMENT_SLOTS = [
+const BASE_DOCUMENT_SLOTS = [
   { key: "id_copy", label: "Certified ID Copy" },
   { key: "birth_certificate", label: "Birth Certificate" },
   { key: "death_certificate", label: "Death Certificate" },
 ];
 
-const emptyDocuments = { id_copy: null, birth_certificate: null, death_certificate: null };
+const emptyDocuments = { id_copy: null, birth_certificate: null, death_certificate: null, power_of_attorney: null };
+
+const ACCEPTED_DOC_TYPES = ["image/png", "image/jpeg", "application/pdf"];
+const ACCEPTED_DOC_ATTR = ACCEPTED_DOC_TYPES.join(",");
 
 function DocumentUploadSlot({ slotKey, label, file, error, onSelect }) {
-  const previewUrl = file ? URL.createObjectURL(file) : null;
+  const isPreviewable = file && file.type !== "application/pdf";
+  const previewUrl = isPreviewable ? URL.createObjectURL(file) : null;
   return (
     <label className={`doc-upload-slot${file ? " doc-upload-slot--filled" : ""}`}>
       <input
         type="file"
-        accept="image/png"
+        accept={ACCEPTED_DOC_ATTR}
         onChange={(e) => onSelect(slotKey, e.target.files?.[0] || null)}
       />
       {previewUrl ? (
         <img src={previewUrl} alt="" className="doc-thumb" />
+      ) : file ? (
+        <span aria-hidden="true">📄</span>
       ) : (
         <span aria-hidden="true">📎</span>
       )}
@@ -80,6 +87,11 @@ export default function MembershipForm() {
   const [consentGiven, setConsentGiven] = useState(false);
   const [status, setStatus] = useState({ state: "idle", message: "" });
   const navigate = useNavigate();
+
+  const documentSlots = [
+    ...BASE_DOCUMENT_SLOTS,
+    ...(form.power_of_attorney === "Yes" ? [{ key: "power_of_attorney", label: "Power of Attorney Copy" }] : []),
+  ];
 
   const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
@@ -104,8 +116,8 @@ export default function MembershipForm() {
     setGrandchildren(grandchildren.filter((_, i) => i !== index));
 
   const selectDocument = (slotKey, file) => {
-    if (file && file.type !== "image/png") {
-      setDocErrors({ ...docErrors, [slotKey]: "Only PNG files are accepted" });
+    if (file && !ACCEPTED_DOC_TYPES.includes(file.type)) {
+      setDocErrors({ ...docErrors, [slotKey]: "Only PNG, JPEG, or PDF files are accepted" });
       setDocuments({ ...documents, [slotKey]: null });
       return;
     }
@@ -128,12 +140,13 @@ export default function MembershipForm() {
         failedUploads = results.filter((r) => r.status === "rejected").length;
       }
 
+      const membershipNote = `Your Membership Number is ${created.membership_number} — keep this for future reference if you ever need to update these details.`;
       setStatus({
         state: "success",
         message:
           failedUploads > 0
-            ? `Registration submitted successfully, but ${failedUploads} document${failedUploads > 1 ? "s" : ""} failed to upload — please contact the office to submit them separately.`
-            : "Registration submitted successfully.",
+            ? `Registration submitted successfully, but ${failedUploads} document${failedUploads > 1 ? "s" : ""} failed to upload — please contact the office to submit them separately. ${membershipNote}`
+            : `Registration submitted successfully. ${membershipNote}`,
       });
       setForm(initialForm);
       setChildren([{ ...emptyChild }]);
@@ -208,13 +221,14 @@ export default function MembershipForm() {
 
       <section className="reg-form__section">
         <div className="reg-form__section-header">
-          <h3>Supporting Documents <span className="reg-form__subtitle">PNG only, optional</span></h3>
+          <h3>Supporting Documents <span className="reg-form__subtitle">PNG, JPEG, or PDF — optional</span></h3>
         </div>
         <p className="reg-form__subtitle" style={{ marginBottom: 14 }}>
           Attach certified copies to help us verify this registration faster.
+          {form.power_of_attorney === "Yes" && " Since you answered Yes to Power of Attorney, please also attach a copy of it below."}
         </p>
         <div className="doc-upload-grid">
-          {DOCUMENT_SLOTS.map(({ key, label }) => (
+          {documentSlots.map(({ key, label }) => (
             <DocumentUploadSlot
               key={key}
               slotKey={key}

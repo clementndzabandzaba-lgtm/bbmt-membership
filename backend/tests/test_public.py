@@ -82,3 +82,70 @@ def test_document_upload_rejects_non_png(client):
         files={"file": ("fake.png", b"not a real png", "image/png")},
     )
     assert res.status_code == 400
+
+
+def test_document_upload_accepts_jpeg_and_pdf(client):
+    reg = client.post("/api/registrations", json=make_registration_payload()).json()
+
+    jpeg_bytes = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
+    res = client.post(
+        f"/api/registrations/{reg['id']}/documents",
+        data={"doc_type": "birth_certificate"},
+        files={"file": ("cert.jpg", jpeg_bytes, "image/jpeg")},
+    )
+    assert res.status_code == 201
+
+    pdf_bytes = b"%PDF-1.4\n%mock pdf content\n%%EOF"
+    res = client.post(
+        f"/api/registrations/{reg['id']}/documents",
+        data={"doc_type": "power_of_attorney"},
+        files={"file": ("poa.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert res.status_code == 201
+    assert res.json()["doc_type"] == "power_of_attorney"
+
+
+def test_document_upload_rejects_mismatched_signature(client):
+    reg = client.post("/api/registrations", json=make_registration_payload()).json()
+    # Claims to be a PDF via content-type, but the bytes are actually a PNG signature.
+    png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 20
+    res = client.post(
+        f"/api/registrations/{reg['id']}/documents",
+        data={"doc_type": "id_copy"},
+        files={"file": ("fake.pdf", png_bytes, "application/pdf")},
+    )
+    assert res.status_code == 400
+
+
+def test_membership_number_is_derived_and_unique(client):
+    payload1 = make_registration_payload(reference_no="MN-1")
+    payload2 = make_registration_payload(
+        reference_no="MN-2",
+        original_member_id_number=VALID_SA_IDS[2],
+        claimant_id_number=VALID_SA_IDS[3],
+    )
+    reg1 = client.post("/api/registrations", json=payload1).json()
+    reg2 = client.post("/api/registrations", json=payload2).json()
+
+    assert reg1["membership_number"] == f"BBMT-{reg1['id']:06d}"
+    assert reg2["membership_number"] == f"BBMT-{reg2['id']:06d}"
+    assert reg1["membership_number"] != reg2["membership_number"]
+
+
+def test_update_reference_bypasses_duplicate_check_when_valid(client):
+    original = client.post("/api/registrations", json=make_registration_payload(reference_no="ORIGINAL")).json()
+
+    update_payload = make_registration_payload(
+        reference_no="UPDATE", update_reference=original["membership_number"]
+    )
+    res = client.post("/api/registrations", json=update_payload)
+    assert res.status_code == 201
+    assert res.json()["update_reference"] == original["membership_number"]
+
+
+def test_update_reference_does_not_bypass_when_bogus(client):
+    client.post("/api/registrations", json=make_registration_payload(reference_no="ORIGINAL"))
+
+    update_payload = make_registration_payload(reference_no="UPDATE", update_reference="BBMT-999999")
+    res = client.post("/api/registrations", json=update_payload)
+    assert res.status_code == 409

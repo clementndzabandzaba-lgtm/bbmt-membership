@@ -82,6 +82,42 @@ def test_audit_log_records_actions(client, auth_headers):
     assert "approved" in actions
 
 
+def test_search_by_membership_number(client, auth_headers):
+    reg = client.post("/api/registrations", json=make_registration_payload(reference_no="SEARCHME")).json()
+
+    res = client.get(
+        f"/api/admin/registrations?q={reg['membership_number']}", headers=auth_headers
+    )
+    assert res.status_code == 200
+    ids = [item["id"] for item in res.json()["items"]]
+    assert reg["id"] in ids
+
+    res_bare = client.get(f"/api/admin/registrations?q={reg['id']}", headers=auth_headers)
+    assert reg["id"] in [item["id"] for item in res_bare.json()["items"]]
+
+
+def test_csv_export_includes_membership_number_and_import_ignores_it(client, auth_headers):
+    reg = client.post("/api/registrations", json=make_registration_payload(reference_no="MN-EXPORT")).json()
+
+    export_res = client.get("/api/admin/registrations/export.csv", headers=auth_headers)
+    rows = list(csv.DictReader(io.StringIO(export_res.text)))
+    target_row = next(r for r in rows if r["ID"] == str(reg["id"]))
+    assert target_row["Membership Number"] == reg["membership_number"]
+
+    # Re-importing the export (including the Membership Number column) must not error.
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()))
+    writer.writeheader()
+    writer.writerow(target_row)
+    import_res = client.post(
+        "/api/admin/registrations/import",
+        files={"file": ("import.csv", buffer.getvalue().encode("utf-8"), "text/csv")},
+        headers=auth_headers,
+    )
+    assert import_res.status_code == 200
+    assert import_res.json()["errors"] == []
+
+
 def test_list_registrations_with_nested_children(client, auth_headers):
     payload = make_registration_payload(
         reference_no="WITH-CHILDREN",

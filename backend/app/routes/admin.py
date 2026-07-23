@@ -1,5 +1,6 @@
 import csv
 import io
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -31,8 +32,10 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 REGISTRATION_COLUMNS = [
     ("id", "ID"),
+    ("membership_number", "Membership Number"),
     ("created_at", "Submitted At"),
     ("status", "Status"),
+    ("update_reference", "Update Reference"),
     ("kgoro", "Kgoro"),
     ("mokgomane", "Mokgomane"),
     ("section", "Section"),
@@ -62,9 +65,14 @@ REGISTRATION_COLUMNS = [
 ]
 
 # Columns that are safe to bulk-import/update from a CSV. Excludes id/created_at
-# (id is only used to detect an update-vs-create) and status/review fields
-# (reviewed separately through the approve/reject workflow, not spreadsheet edits).
-IMPORTABLE_FIELDS = [field for field, _ in REGISTRATION_COLUMNS if field not in ("id", "created_at", "status")]
+# (id is only used to detect an update-vs-create), status/review fields (reviewed
+# separately through the approve/reject workflow, not spreadsheet edits), and
+# membership_number (a derived, read-only property — not a real settable column).
+IMPORTABLE_FIELDS = [
+    field
+    for field, _ in REGISTRATION_COLUMNS
+    if field not in ("id", "membership_number", "created_at", "status")
+]
 
 
 @router.post(
@@ -148,14 +156,17 @@ def _apply_filters(
         query = query.filter(Registration.origin_ethnicity.ilike(f"%{origin_ethnicity}%"))
     if q:
         like = f"%{q}%"
-        query = query.filter(
-            or_(
-                Registration.claimant_name.ilike(like),
-                Registration.original_member_name.ilike(like),
-                Registration.claimant_id_number.ilike(like),
-                Registration.original_member_id_number.ilike(like),
-            )
-        )
+        conditions = [
+            Registration.claimant_name.ilike(like),
+            Registration.original_member_name.ilike(like),
+            Registration.claimant_id_number.ilike(like),
+            Registration.original_member_id_number.ilike(like),
+        ]
+        # Support pasting a Membership Number ("BBMT-000045") or bare id ("45").
+        digits = re.sub(r"\D", "", q)
+        if digits:
+            conditions.append(Registration.id == int(digits))
+        query = query.filter(or_(*conditions))
     if date_from:
         query = query.filter(Registration.created_at >= date_from)
     if date_to:

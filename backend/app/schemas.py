@@ -70,6 +70,7 @@ class RegistrationIn(BaseModel):
     power_of_attorney: Optional[str] = None
 
     consent_given: bool = False
+    update_reference: Optional[str] = None
 
     children: list[ChildIn] = []
     grandchildren: list[GrandChildIn] = []
@@ -100,6 +101,7 @@ class RegistrationOut(RegistrationIn):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    membership_number: str
     created_at: datetime
     status: str = "pending"
     review_note: Optional[str] = None

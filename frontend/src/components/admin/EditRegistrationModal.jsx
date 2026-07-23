@@ -42,7 +42,14 @@ export default function EditRegistrationModal({ registration, token, onCancel, o
   return (
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal-card modal-card--wide" onClick={(e) => e.stopPropagation()}>
-        <h3>Edit registration #{registration.id}</h3>
+        <h3>
+          Edit registration — {registration.membership_number}
+          {registration.update_reference && (
+            <span className="reg-form__subtitle" style={{ display: "block", marginTop: 4, fontWeight: 500 }}>
+              This submission references Membership Number: {registration.update_reference}
+            </span>
+          )}
+        </h3>
         <form onSubmit={handleSubmit}>
           <RegistrationFormFields
             form={form}

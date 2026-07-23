@@ -71,6 +71,14 @@ export default function RegistrationFormFields({
             Zone
             <input required={req} value={form.zone || ""} onChange={update("zone")} />
           </label>
+          <label>
+            Membership Number <span className="field-optional-tag">Only if updating existing details</span>
+            <input
+              placeholder="e.g. BBMT-000045"
+              value={form.update_reference || ""}
+              onChange={update("update_reference")}
+            />
+          </label>
         </div>
       </section>
 
@@ -293,7 +301,11 @@ export default function RegistrationFormFields({
           </label>
           <label>
             Power of Attorney
-            <input required={req} value={form.power_of_attorney || ""} onChange={update("power_of_attorney")} />
+            <select required={req} value={form.power_of_attorney || ""} onChange={update("power_of_attorney")}>
+              <option value="">Select...</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
           </label>
         </div>
       </section>

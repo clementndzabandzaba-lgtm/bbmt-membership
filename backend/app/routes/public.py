@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
@@ -27,6 +29,18 @@ def _find_duplicate(db: Session, payload: RegistrationIn) -> Registration | None
     )
 
 
+def _references_existing_registration(db: Session, update_reference: str | None) -> bool:
+    """True if `update_reference` (e.g. "BBMT-000045" or just "45") resolves to a
+    real registration. A bogus/unmatched reference is ignored rather than trusted,
+    so it can't be used to bypass duplicate detection for an unrelated record."""
+    if not update_reference:
+        return False
+    digits = re.sub(r"\D", "", update_reference)
+    if not digits:
+        return False
+    return db.query(Registration.id).filter(Registration.id == int(digits)).first() is not None
+
+
 @router.post(
     "",
     response_model=RegistrationOut,
@@ -40,12 +54,14 @@ def create_registration(payload: RegistrationIn, db: Session = Depends(get_db)):
             detail="You must consent to the processing of this information before submitting.",
         )
 
-    duplicate = _find_duplicate(db, payload)
+    is_update_request = _references_existing_registration(db, payload.update_reference)
+    duplicate = None if is_update_request else _find_duplicate(db, payload)
     if duplicate:
         raise HTTPException(
             status_code=409,
             detail=f"A registration with this ID number already exists (status: {duplicate.status}). "
-            "Please contact the office if you believe this is an error.",
+            "Please contact the office if you believe this is an error, or enter your Membership "
+            "Number above if you're updating your existing details.",
         )
 
     data = payload.model_dump(exclude={"children", "grandchildren"})

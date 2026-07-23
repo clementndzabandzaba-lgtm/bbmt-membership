@@ -6,7 +6,7 @@ export default function RegistrationsTable({ registrations, onEdit, onApprove, o
       <table className="reg-table">
         <thead>
           <tr>
-            <th>ID</th>
+            <th>Membership #</th>
             <th>Submitted</th>
             <th>Status</th>
             <th>Kgoro</th>
@@ -15,13 +15,14 @@ export default function RegistrationsTable({ registrations, onEdit, onApprove, o
             <th>Email</th>
             <th>Children</th>
             <th>Grandchildren</th>
+            <th>Update Ref.</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {registrations.map((reg) => (
             <tr key={reg.id} className={reg.is_new ? "admin-dashboard__row--new" : ""}>
-              <td>{reg.id}</td>
+              <td>{reg.membership_number}</td>
               <td>{new Date(reg.created_at).toLocaleString()}</td>
               <td>
                 <StatusBadge status={reg.status} />
@@ -33,6 +34,7 @@ export default function RegistrationsTable({ registrations, onEdit, onApprove, o
               <td>{reg.email}</td>
               <td>{reg.children?.length ?? 0}</td>
               <td>{reg.grandchildren?.length ?? 0}</td>
+              <td>{reg.update_reference || "—"}</td>
               <td>
                 <div className="row-actions">
                   <button className="row-actions__btn row-actions__btn--edit" onClick={() => onEdit(reg)}>
@@ -57,7 +59,7 @@ export default function RegistrationsTable({ registrations, onEdit, onApprove, o
           ))}
           {registrations.length === 0 && (
             <tr>
-              <td colSpan={10} className="admin-dashboard__empty">No registrations match the current filters.</td>
+              <td colSpan={11} className="admin-dashboard__empty">No registrations match the current filters.</td>
             </tr>
           )}
         </tbody>

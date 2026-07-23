@@ -5,8 +5,12 @@ const DOC_TYPES = [
   { value: "id_copy", label: "Certified ID Copy" },
   { value: "birth_certificate", label: "Birth Certificate" },
   { value: "death_certificate", label: "Death Certificate" },
+  { value: "power_of_attorney", label: "Power of Attorney" },
   { value: "other", label: "Other" },
 ];
+
+const ACCEPTED_DOC_TYPES = ["image/png", "image/jpeg", "application/pdf"];
+const ACCEPTED_DOC_ATTR = ACCEPTED_DOC_TYPES.join(",");
 
 export default function DocumentsPanel({ registrationId, token, documents = [] }) {
   const [docs, setDocs] = useState(documents);
@@ -37,8 +41,8 @@ export default function DocumentsPanel({ registrationId, token, documents = [] }
     const file = e.target.files?.[0];
     if (!file) return;
     setError("");
-    if (file.type !== "image/png") {
-      setError("Only PNG files are accepted");
+    if (!ACCEPTED_DOC_TYPES.includes(file.type)) {
+      setError("Only PNG, JPEG, or PDF files are accepted");
       e.target.value = "";
       return;
     }
@@ -109,8 +113,14 @@ export default function DocumentsPanel({ registrationId, token, documents = [] }
           ))}
         </select>
         <label className="reg-form__add-btn" style={{ cursor: "pointer" }}>
-          {uploading ? "Uploading..." : "+ Upload PNG"}
-          <input type="file" accept="image/png" onChange={handleUpload} disabled={uploading} style={{ display: "none" }} />
+          {uploading ? "Uploading..." : "+ Upload PNG/JPEG/PDF"}
+          <input
+            type="file"
+            accept={ACCEPTED_DOC_ATTR}
+            onChange={handleUpload}
+            disabled={uploading}
+            style={{ display: "none" }}
+          />
         </label>
         {error && <span className="doc-upload-slot__error">{error}</span>}
       </div>
