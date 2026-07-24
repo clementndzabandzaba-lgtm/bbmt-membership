@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..document_utils import validate_document_upload
-from ..models import Registration, Child, Document, GrandChild
+from ..models import ClaimantSpouse, Registration, Child, Document, GrandChild, OriginalSpouse
 from ..rate_limit import rate_limit
 from ..schemas import DocumentOut, RegistrationIn, RegistrationOut
 
@@ -64,7 +64,9 @@ def create_registration(payload: RegistrationIn, db: Session = Depends(get_db)):
             "Number above if you're updating your existing details.",
         )
 
-    data = payload.model_dump(exclude={"children", "grandchildren"})
+    data = payload.model_dump(
+        exclude={"children", "grandchildren", "original_spouses", "claimant_spouses"}
+    )
     registration = Registration(**data)
 
     for child in payload.children:
@@ -74,6 +76,14 @@ def create_registration(payload: RegistrationIn, db: Session = Depends(get_db)):
     for grandchild in payload.grandchildren:
         if any(getattr(grandchild, field) for field in grandchild.model_fields):
             registration.grandchildren.append(GrandChild(**grandchild.model_dump()))
+
+    for spouse in payload.original_spouses:
+        if any(getattr(spouse, field) for field in spouse.model_fields):
+            registration.original_spouses.append(OriginalSpouse(**spouse.model_dump()))
+
+    for spouse in payload.claimant_spouses:
+        if any(getattr(spouse, field) for field in spouse.model_fields):
+            registration.claimant_spouses.append(ClaimantSpouse(**spouse.model_dump()))
 
     db.add(registration)
     db.commit()

@@ -16,6 +16,45 @@ _REGISTRATION_COLUMN_MIGRATIONS = [
 ]
 
 
+_SPOUSE_BACKFILLS = [
+    (
+        "original_spouses",
+        "original_spouse_title",
+        "original_spouse_name",
+        "original_spouse_id_number",
+    ),
+    (
+        "claimant_spouses",
+        "claimant_spouse_title",
+        "claimant_spouse_name",
+        "claimant_spouse_id_number",
+    ),
+]
+
+
+def _backfill_legacy_spouses(engine: Engine) -> None:
+    """One-time (idempotent) copy of the old single-spouse columns into the
+    new original_spouses/claimant_spouses tables, so pre-existing production
+    registrations show their spouse in the new repeatable-spouse UI too.
+    Dialect-agnostic — a local dev DB can carry the same kind of legacy data.
+    """
+    with engine.begin() as conn:
+        for table, title_col, name_col, id_col in _SPOUSE_BACKFILLS:
+            conn.execute(
+                text(
+                    f"""
+                    INSERT INTO {table} (registration_id, title, name, id_number)
+                    SELECT id, {title_col}, {name_col}, {id_col}
+                    FROM registrations r
+                    WHERE {name_col} IS NOT NULL AND {name_col} != ''
+                    AND NOT EXISTS (
+                        SELECT 1 FROM {table} s WHERE s.registration_id = r.id
+                    )
+                    """
+                )
+            )
+
+
 def run_startup_migrations(engine: Engine) -> None:
     """Idempotently add columns introduced after the initial schema.
 
@@ -24,10 +63,12 @@ def run_startup_migrations(engine: Engine) -> None:
     to be added explicitly. Postgres only (sqlite dev DBs already get the new
     columns for free since create_all() builds the whole table from scratch).
     """
-    if engine.dialect.name != "postgresql":
-        logger.info("Skipping raw-SQL migrations on dialect %s", engine.dialect.name)
-        return
-    with engine.begin() as conn:
-        for clause in _REGISTRATION_COLUMN_MIGRATIONS:
-            conn.execute(text(f"ALTER TABLE registrations {clause}"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_registrations_status ON registrations (status)"))
+    if engine.dialect.name == "postgresql":
+        with engine.begin() as conn:
+            for clause in _REGISTRATION_COLUMN_MIGRATIONS:
+                conn.execute(text(f"ALTER TABLE registrations {clause}"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_registrations_status ON registrations (status)"))
+    else:
+        logger.info("Skipping raw-SQL column migrations on dialect %s", engine.dialect.name)
+
+    _backfill_legacy_spouses(engine)

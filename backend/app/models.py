@@ -77,6 +77,12 @@ class Registration(Base):
     documents = relationship(
         "Document", back_populates="registration", cascade="all, delete-orphan"
     )
+    original_spouses = relationship(
+        "OriginalSpouse", back_populates="registration", cascade="all, delete-orphan"
+    )
+    claimant_spouses = relationship(
+        "ClaimantSpouse", back_populates="registration", cascade="all, delete-orphan"
+    )
 
 
 class Child(Base):
@@ -102,6 +108,30 @@ class GrandChild(Base):
     gender = Column(String(10))
 
     registration = relationship("Registration", back_populates="grandchildren")
+
+
+class OriginalSpouse(Base):
+    __tablename__ = "original_spouses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    registration_id = Column(Integer, ForeignKey("registrations.id"), nullable=False)
+    title = Column(String(10))
+    name = Column(String(200))
+    id_number = Column(String(20))
+
+    registration = relationship("Registration", back_populates="original_spouses")
+
+
+class ClaimantSpouse(Base):
+    __tablename__ = "claimant_spouses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    registration_id = Column(Integer, ForeignKey("registrations.id"), nullable=False)
+    title = Column(String(10))
+    name = Column(String(200))
+    id_number = Column(String(20))
+
+    registration = relationship("Registration", back_populates="claimant_spouses")
 
 
 class Document(Base):

@@ -14,6 +14,12 @@ export default function EditRegistrationModal({ registration, token, onCancel, o
   const [grandchildren, setGrandchildren] = useState(() =>
     registration.grandchildren?.length ? registration.grandchildren.map((g) => ({ ...g })) : [{ ...emptyGrandChild }]
   );
+  const [originalSpouses, setOriginalSpouses] = useState(() =>
+    registration.original_spouses?.length ? registration.original_spouses.map((s) => ({ ...s })) : []
+  );
+  const [claimantSpouses, setClaimantSpouses] = useState(() =>
+    registration.claimant_spouses?.length ? registration.claimant_spouses.map((s) => ({ ...s })) : []
+  );
 
   const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
@@ -34,9 +40,31 @@ export default function EditRegistrationModal({ registration, token, onCancel, o
   const addGrandchildRow = () => setGrandchildren([...grandchildren, { ...emptyGrandChild }]);
   const removeGrandchildRow = (index) => setGrandchildren(grandchildren.filter((_, i) => i !== index));
 
+  const updateOriginalSpouse = (index, field) => (e) => {
+    const next = [...originalSpouses];
+    next[index] = { ...next[index], [field]: e.target.value };
+    setOriginalSpouses(next);
+  };
+  const addOriginalSpouseRow = () => setOriginalSpouses([...originalSpouses, { title: "", name: "", id_number: "" }]);
+  const removeOriginalSpouseRow = (index) => setOriginalSpouses(originalSpouses.filter((_, i) => i !== index));
+
+  const updateClaimantSpouse = (index, field) => (e) => {
+    const next = [...claimantSpouses];
+    next[index] = { ...next[index], [field]: e.target.value };
+    setClaimantSpouses(next);
+  };
+  const addClaimantSpouseRow = () => setClaimantSpouses([...claimantSpouses, { title: "", name: "", id_number: "" }]);
+  const removeClaimantSpouseRow = (index) => setClaimantSpouses(claimantSpouses.filter((_, i) => i !== index));
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSave({ ...form, children, grandchildren });
+    onSave({
+      ...form,
+      children,
+      grandchildren,
+      original_spouses: originalSpouses,
+      claimant_spouses: claimantSpouses,
+    });
   };
 
   return (
@@ -62,6 +90,14 @@ export default function EditRegistrationModal({ registration, token, onCancel, o
             updateGrandchild={updateGrandchild}
             addGrandchildRow={addGrandchildRow}
             removeGrandchildRow={removeGrandchildRow}
+            originalSpouses={originalSpouses}
+            updateOriginalSpouse={updateOriginalSpouse}
+            addOriginalSpouseRow={addOriginalSpouseRow}
+            removeOriginalSpouseRow={removeOriginalSpouseRow}
+            claimantSpouses={claimantSpouses}
+            updateClaimantSpouse={updateClaimantSpouse}
+            addClaimantSpouseRow={addClaimantSpouseRow}
+            removeClaimantSpouseRow={removeClaimantSpouseRow}
             requireFields={false}
           />
 

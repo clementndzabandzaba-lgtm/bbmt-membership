@@ -149,3 +149,20 @@ def test_update_reference_does_not_bypass_when_bogus(client):
     update_payload = make_registration_payload(reference_no="UPDATE", update_reference="BBMT-999999")
     res = client.post("/api/registrations", json=update_payload)
     assert res.status_code == 409
+
+
+def test_create_registration_with_multiple_spouses(client):
+    payload = make_registration_payload(
+        original_spouses=[
+            {"title": "Mrs", "name": "First Wife", "id_number": VALID_SA_IDS[2]},
+            {"title": "Mrs", "name": "Second Wife", "id_number": VALID_SA_IDS[3]},
+        ],
+        claimant_spouses=[{"title": "Mrs", "name": "Claimant Wife", "id_number": VALID_SA_IDS[4]}],
+    )
+    res = client.post("/api/registrations", json=payload)
+    assert res.status_code == 201
+    body = res.json()
+    assert len(body["original_spouses"]) == 2
+    assert {s["name"] for s in body["original_spouses"]} == {"First Wife", "Second Wife"}
+    assert len(body["claimant_spouses"]) == 1
+    assert body["claimant_spouses"][0]["name"] == "Claimant Wife"

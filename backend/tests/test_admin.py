@@ -3,7 +3,7 @@ import io
 
 from sqlalchemy.orm import sessionmaker
 
-from app.models import Child, Registration
+from app.models import Child, OriginalSpouse, Registration
 
 from .conftest import ADMIN_PASSWORD, ADMIN_USERNAME, VALID_SA_IDS, make_registration_payload
 
@@ -89,6 +89,54 @@ def test_edit_registration_preserves_consent(client, auth_headers):
     res = client.patch(f"/api/admin/registrations/{reg['id']}", json=payload, headers=auth_headers)
     assert res.status_code == 200
     assert res.json()["kgoro"] == "Updated Kgoro"
+
+
+def test_edit_registration_updates_spouses(client, auth_headers):
+    payload = make_registration_payload(
+        original_spouses=[{"title": "Mrs", "name": "Wife One", "id_number": VALID_SA_IDS[2]}]
+    )
+    reg = client.post("/api/registrations", json=payload).json()
+    assert len(reg["original_spouses"]) == 1
+
+    edit_payload = make_registration_payload(
+        original_spouses=[
+            {"title": "Mrs", "name": "Wife One", "id_number": VALID_SA_IDS[2]},
+            {"title": "Mrs", "name": "Wife Two", "id_number": VALID_SA_IDS[3]},
+        ],
+        claimant_spouses=[],
+    )
+    res = client.patch(f"/api/admin/registrations/{reg['id']}", json=edit_payload, headers=auth_headers)
+    assert res.status_code == 200
+    assert len(res.json()["original_spouses"]) == 2
+
+    # Editing again with an empty list removes all spouses.
+    clear_payload = make_registration_payload(original_spouses=[], claimant_spouses=[])
+    res2 = client.patch(f"/api/admin/registrations/{reg['id']}", json=clear_payload, headers=auth_headers)
+    assert res2.status_code == 200
+    assert res2.json()["original_spouses"] == []
+
+
+def test_read_registration_with_legacy_invalid_spouse_id(client, auth_headers, test_engine):
+    """Same regression class as test_read_registration_with_legacy_invalid_id_number,
+    but for the new spouse tables: a spouse row with a non-conforming ID number
+    (e.g. from the legacy-data backfill) must not crash list/detail reads."""
+    session_local = sessionmaker(bind=test_engine)
+    db = session_local()
+    reg = Registration(
+        kgoro="Legacy",
+        claimant_name="Legacy Person",
+        claimant_id_number=VALID_SA_IDS[0],
+        consent_given=True,
+    )
+    reg.original_spouses.append(OriginalSpouse(title="Mrs", name="Legacy Wife", id_number="1234567890123"))
+    db.add(reg)
+    db.commit()
+    reg_id = reg.id
+    db.close()
+
+    res = client.get(f"/api/admin/registrations/{reg_id}", headers=auth_headers)
+    assert res.status_code == 200
+    assert res.json()["original_spouses"][0]["id_number"] == "1234567890123"
 
 
 def test_delete_registration(client, auth_headers):

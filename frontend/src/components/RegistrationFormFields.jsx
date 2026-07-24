@@ -13,6 +13,53 @@ export function TitleSelect({ label, value, onChange, options = TITLE_OPTIONS, r
   );
 }
 
+function SpouseTable({ spouses, onUpdate, onAdd, onRemove }) {
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+        <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--ink-soft)" }}>
+          Spouse(s) <span className="field-optional-tag">Optional — add more than one if applicable</span>
+        </span>
+        <button type="button" className="reg-form__add-btn" onClick={onAdd}>+ Add spouse</button>
+      </div>
+      {spouses.length > 0 && (
+        <div className="reg-table-wrap">
+          <table className="reg-table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Name</th>
+                <th>ID Number</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {spouses.map((spouse, i) => (
+                <tr key={i}>
+                  <td><TitleSelect value={spouse.title} onChange={onUpdate(i, "title")} required={false} /></td>
+                  <td><input placeholder="Full name" value={spouse.name || ""} onChange={onUpdate(i, "name")} /></td>
+                  <td>
+                    <input
+                      placeholder="ID number (13 digits)"
+                      maxLength={13}
+                      inputMode="numeric"
+                      value={spouse.id_number || ""}
+                      onChange={onUpdate(i, "id_number")}
+                    />
+                  </td>
+                  <td>
+                    <button type="button" className="reg-form__remove-btn" onClick={() => onRemove(i)} aria-label="Remove spouse row">✕</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Shared field set rendered by both the public registration form and the
  * admin edit modal. `requireFields` controls whether the always-required
@@ -32,6 +79,14 @@ export default function RegistrationFormFields({
   updateGrandchild,
   addGrandchildRow,
   removeGrandchildRow,
+  originalSpouses,
+  updateOriginalSpouse,
+  addOriginalSpouseRow,
+  removeOriginalSpouseRow,
+  claimantSpouses,
+  updateClaimantSpouse,
+  addClaimantSpouseRow,
+  removeClaimantSpouseRow,
   requireFields = true,
 }) {
   const req = requireFields;
@@ -86,100 +141,64 @@ export default function RegistrationFormFields({
         <div className="reg-form__section-header">
           <h3>Main Member <span className="reg-form__subtitle">(Originally Dispossessed)</span></h3>
         </div>
-        <div className="grid grid--2">
-          <div className="name-field">
-            <span>Main Member</span>
-            <div className="name-field__row">
-              <TitleSelect value={form.original_member_title} onChange={update("original_member_title")} required={req} />
-              <input
-                required={req}
-                placeholder="Full name"
-                value={form.original_member_name || ""}
-                onChange={update("original_member_name")}
-              />
-            </div>
+        <div className="name-field">
+          <span>Main Member</span>
+          <div className="name-field__row">
+            <TitleSelect value={form.original_member_title} onChange={update("original_member_title")} required={req} />
             <input
               required={req}
-              placeholder="ID number (13 digits)"
-              maxLength={13}
-              inputMode="numeric"
-              value={form.original_member_id_number || ""}
-              onChange={update("original_member_id_number")}
+              placeholder="Full name"
+              value={form.original_member_name || ""}
+              onChange={update("original_member_name")}
             />
           </div>
-          <div className="name-field">
-            <span>Spouse <span className="field-optional-tag">Optional</span></span>
-            <div className="name-field__row">
-              <TitleSelect
-                value={form.original_spouse_title}
-                onChange={update("original_spouse_title")}
-                required={false}
-              />
-              <input
-                placeholder="Full name"
-                value={form.original_spouse_name || ""}
-                onChange={update("original_spouse_name")}
-              />
-            </div>
-            <input
-              placeholder="ID number (13 digits)"
-              maxLength={13}
-              inputMode="numeric"
-              value={form.original_spouse_id_number || ""}
-              onChange={update("original_spouse_id_number")}
-            />
-          </div>
+          <input
+            required={req}
+            placeholder="ID number (13 digits)"
+            maxLength={13}
+            inputMode="numeric"
+            value={form.original_member_id_number || ""}
+            onChange={update("original_member_id_number")}
+          />
         </div>
+        <SpouseTable
+          spouses={originalSpouses}
+          onUpdate={updateOriginalSpouse}
+          onAdd={addOriginalSpouseRow}
+          onRemove={removeOriginalSpouseRow}
+        />
       </section>
 
       <section className="reg-form__section">
         <div className="reg-form__section-header">
           <h3>Main Member <span className="reg-form__subtitle">(Main Claimant)</span></h3>
         </div>
-        <div className="grid grid--2">
-          <div className="name-field">
-            <span>Main Member</span>
-            <div className="name-field__row">
-              <TitleSelect value={form.claimant_title} onChange={update("claimant_title")} required={req} />
-              <input
-                required={req}
-                placeholder="Full name"
-                value={form.claimant_name || ""}
-                onChange={update("claimant_name")}
-              />
-            </div>
+        <div className="name-field">
+          <span>Main Member</span>
+          <div className="name-field__row">
+            <TitleSelect value={form.claimant_title} onChange={update("claimant_title")} required={req} />
             <input
               required={req}
-              placeholder="ID number (13 digits)"
-              maxLength={13}
-              inputMode="numeric"
-              value={form.claimant_id_number || ""}
-              onChange={update("claimant_id_number")}
+              placeholder="Full name"
+              value={form.claimant_name || ""}
+              onChange={update("claimant_name")}
             />
           </div>
-          <div className="name-field">
-            <span>Spouse <span className="field-optional-tag">Optional</span></span>
-            <div className="name-field__row">
-              <TitleSelect
-                value={form.claimant_spouse_title}
-                onChange={update("claimant_spouse_title")}
-                required={false}
-              />
-              <input
-                placeholder="Full name"
-                value={form.claimant_spouse_name || ""}
-                onChange={update("claimant_spouse_name")}
-              />
-            </div>
-            <input
-              placeholder="ID number (13 digits)"
-              maxLength={13}
-              inputMode="numeric"
-              value={form.claimant_spouse_id_number || ""}
-              onChange={update("claimant_spouse_id_number")}
-            />
-          </div>
+          <input
+            required={req}
+            placeholder="ID number (13 digits)"
+            maxLength={13}
+            inputMode="numeric"
+            value={form.claimant_id_number || ""}
+            onChange={update("claimant_id_number")}
+          />
         </div>
+        <SpouseTable
+          spouses={claimantSpouses}
+          onUpdate={updateClaimantSpouse}
+          onAdd={addClaimantSpouseRow}
+          onRemove={removeClaimantSpouseRow}
+        />
       </section>
 
       <section className="reg-form__section">

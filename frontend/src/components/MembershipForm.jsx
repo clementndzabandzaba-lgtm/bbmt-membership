@@ -9,6 +9,7 @@ import whatsappIcon from "../assets/brand/whatsapp.png";
 
 const emptyChild = { name: "", id_number: "", gender: "", contact: "" };
 const emptyGrandChild = { name: "", id_number: "", gender: "" };
+const emptySpouse = { title: "", name: "", id_number: "" };
 
 const initialForm = {
   kgoro: "",
@@ -23,16 +24,10 @@ const initialForm = {
   original_member_title: "",
   original_member_name: "",
   original_member_id_number: "",
-  original_spouse_title: "",
-  original_spouse_name: "",
-  original_spouse_id_number: "",
 
   claimant_title: "",
   claimant_name: "",
   claimant_id_number: "",
-  claimant_spouse_title: "",
-  claimant_spouse_name: "",
-  claimant_spouse_id_number: "",
 
   relationship_to_odi: "",
   email: "",
@@ -82,6 +77,8 @@ export default function MembershipForm() {
   const [form, setForm] = useState(initialForm);
   const [children, setChildren] = useState([{ ...emptyChild }]);
   const [grandchildren, setGrandchildren] = useState([{ ...emptyGrandChild }]);
+  const [originalSpouses, setOriginalSpouses] = useState([]);
+  const [claimantSpouses, setClaimantSpouses] = useState([]);
   const [documents, setDocuments] = useState({ ...emptyDocuments });
   const [docErrors, setDocErrors] = useState({});
   const [consentGiven, setConsentGiven] = useState(false);
@@ -115,6 +112,24 @@ export default function MembershipForm() {
   const removeGrandchildRow = (index) =>
     setGrandchildren(grandchildren.filter((_, i) => i !== index));
 
+  const updateOriginalSpouse = (index, field) => (e) => {
+    const next = [...originalSpouses];
+    next[index] = { ...next[index], [field]: e.target.value };
+    setOriginalSpouses(next);
+  };
+  const addOriginalSpouseRow = () => setOriginalSpouses([...originalSpouses, { ...emptySpouse }]);
+  const removeOriginalSpouseRow = (index) =>
+    setOriginalSpouses(originalSpouses.filter((_, i) => i !== index));
+
+  const updateClaimantSpouse = (index, field) => (e) => {
+    const next = [...claimantSpouses];
+    next[index] = { ...next[index], [field]: e.target.value };
+    setClaimantSpouses(next);
+  };
+  const addClaimantSpouseRow = () => setClaimantSpouses([...claimantSpouses, { ...emptySpouse }]);
+  const removeClaimantSpouseRow = (index) =>
+    setClaimantSpouses(claimantSpouses.filter((_, i) => i !== index));
+
   const selectDocument = (slotKey, file) => {
     if (file && !ACCEPTED_DOC_TYPES.includes(file.type)) {
       setDocErrors({ ...docErrors, [slotKey]: "Only PNG, JPEG, or PDF files are accepted" });
@@ -129,7 +144,14 @@ export default function MembershipForm() {
     e.preventDefault();
     setStatus({ state: "submitting", message: "" });
     try {
-      const created = await submitRegistration({ ...form, children, grandchildren, consent_given: consentGiven });
+      const created = await submitRegistration({
+        ...form,
+        children,
+        grandchildren,
+        original_spouses: originalSpouses,
+        claimant_spouses: claimantSpouses,
+        consent_given: consentGiven,
+      });
 
       const filesToUpload = Object.entries(documents).filter(([, file]) => file);
       let failedUploads = 0;
@@ -151,6 +173,8 @@ export default function MembershipForm() {
       setForm(initialForm);
       setChildren([{ ...emptyChild }]);
       setGrandchildren([{ ...emptyGrandChild }]);
+      setOriginalSpouses([]);
+      setClaimantSpouses([]);
       setDocuments({ ...emptyDocuments });
       setDocErrors({});
       setConsentGiven(false);
@@ -216,6 +240,14 @@ export default function MembershipForm() {
         updateGrandchild={updateGrandchild}
         addGrandchildRow={addGrandchildRow}
         removeGrandchildRow={removeGrandchildRow}
+        originalSpouses={originalSpouses}
+        updateOriginalSpouse={updateOriginalSpouse}
+        addOriginalSpouseRow={addOriginalSpouseRow}
+        removeOriginalSpouseRow={removeOriginalSpouseRow}
+        claimantSpouses={claimantSpouses}
+        updateClaimantSpouse={updateClaimantSpouse}
+        addClaimantSpouseRow={addClaimantSpouseRow}
+        removeClaimantSpouseRow={removeClaimantSpouseRow}
         requireFields
       />
 

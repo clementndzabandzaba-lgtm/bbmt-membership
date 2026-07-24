@@ -37,6 +37,17 @@ class GrandChildIn(BaseModel):
         return _validate_id_number(value)
 
 
+class SpouseIn(BaseModel):
+    title: Optional[str] = None
+    name: Optional[str] = None
+    id_number: Optional[str] = None
+
+    @field_validator("id_number")
+    @classmethod
+    def _check_id_number(cls, value):
+        return _validate_id_number(value)
+
+
 class RegistrationIn(BaseModel):
     kgoro: Optional[str] = None
     mokgomane: Optional[str] = None
@@ -74,6 +85,8 @@ class RegistrationIn(BaseModel):
 
     children: list[ChildIn] = []
     grandchildren: list[GrandChildIn] = []
+    original_spouses: list[SpouseIn] = []
+    claimant_spouses: list[SpouseIn] = []
 
     @field_validator(
         "original_member_id_number",
@@ -114,6 +127,14 @@ class GrandChildOut(BaseModel):
     gender: Optional[str] = None
 
 
+class SpouseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    title: Optional[str] = None
+    name: Optional[str] = None
+    id_number: Optional[str] = None
+
+
 class RegistrationOut(RegistrationIn):
     model_config = ConfigDict(from_attributes=True)
 
@@ -136,6 +157,8 @@ class RegistrationOut(RegistrationIn):
     # RegistrationIn's validators.
     children: list[ChildOut] = []
     grandchildren: list[GrandChildOut] = []
+    original_spouses: list[SpouseOut] = []
+    claimant_spouses: list[SpouseOut] = []
 
     @field_validator(
         "original_member_id_number",

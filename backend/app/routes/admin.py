@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 from ..auth import create_access_token, get_current_admin, verify_password
 from ..database import get_db
 from ..document_utils import validate_document_upload
-from ..models import AdminUser, AuditLog, Child, Document, GrandChild, Registration
+from ..models import AdminUser, AuditLog, ClaimantSpouse, Child, Document, GrandChild, OriginalSpouse, Registration
 from ..rate_limit import rate_limit
 from ..schemas import (
     AuditLogOut,
@@ -121,6 +121,8 @@ def _load_query(db: Session):
         joinedload(Registration.children),
         joinedload(Registration.grandchildren),
         joinedload(Registration.documents),
+        joinedload(Registration.original_spouses),
+        joinedload(Registration.claimant_spouses),
     )
 
 
@@ -287,6 +289,18 @@ def _build_workbook(registrations: list[Registration]) -> Workbook:
                 [reg.id, reg.claimant_name or reg.original_member_name, gc.name, gc.id_number, gc.gender]
             )
 
+    original_spouses_sheet = wb.create_sheet("Original Spouses")
+    original_spouses_sheet.append(["Registration ID", "Main Member Name", "Title", "Name", "ID Number"])
+    for reg in registrations:
+        for spouse in reg.original_spouses:
+            original_spouses_sheet.append([reg.id, reg.original_member_name, spouse.title, spouse.name, spouse.id_number])
+
+    claimant_spouses_sheet = wb.create_sheet("Claimant Spouses")
+    claimant_spouses_sheet.append(["Registration ID", "Main Member Name", "Title", "Name", "ID Number"])
+    for reg in registrations:
+        for spouse in reg.claimant_spouses:
+            claimant_spouses_sheet.append([reg.id, reg.claimant_name, spouse.title, spouse.name, spouse.id_number])
+
     for sheet in wb.worksheets:
         for column_cells in sheet.columns:
             length = max((len(str(cell.value)) if cell.value is not None else 0) for cell in column_cells)
@@ -302,7 +316,12 @@ def export_registrations(
     _admin: AdminUser = Depends(get_current_admin),
 ):
     query = filters.apply(
-        db.query(Registration).options(joinedload(Registration.children), joinedload(Registration.grandchildren))
+        db.query(Registration).options(
+            joinedload(Registration.children),
+            joinedload(Registration.grandchildren),
+            joinedload(Registration.original_spouses),
+            joinedload(Registration.claimant_spouses),
+        )
     )
     registrations = query.order_by(Registration.created_at.asc()).all()
 
@@ -451,7 +470,9 @@ def update_registration(
     if not registration:
         raise HTTPException(status_code=404, detail="Registration not found")
 
-    data = payload.model_dump(exclude={"children", "grandchildren"})
+    data = payload.model_dump(
+        exclude={"children", "grandchildren", "original_spouses", "claimant_spouses"}
+    )
     for field, value in data.items():
         setattr(registration, field, value)
 
@@ -464,6 +485,16 @@ def update_registration(
     for grandchild in payload.grandchildren:
         if any(getattr(grandchild, field) for field in grandchild.model_fields):
             registration.grandchildren.append(GrandChild(**grandchild.model_dump()))
+
+    registration.original_spouses.clear()
+    for spouse in payload.original_spouses:
+        if any(getattr(spouse, field) for field in spouse.model_fields):
+            registration.original_spouses.append(OriginalSpouse(**spouse.model_dump()))
+
+    registration.claimant_spouses.clear()
+    for spouse in payload.claimant_spouses:
+        if any(getattr(spouse, field) for field in spouse.model_fields):
+            registration.claimant_spouses.append(ClaimantSpouse(**spouse.model_dump()))
 
     _log_action(db, admin.username, "edited", registration.id, _registration_label(registration))
 
