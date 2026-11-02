@@ -7,10 +7,9 @@ import os
 
 from dotenv import load_dotenv
 
-from app.auth import hash_password
+from app.auth import sync_admin_user
 from app.database import Base, SessionLocal, engine
 from app.migrations import run_startup_migrations
-from app.models import AdminUser
 
 load_dotenv()
 
@@ -26,16 +25,8 @@ def main():
 
     db = SessionLocal()
     try:
-        existing = db.query(AdminUser).filter(AdminUser.username == username).first()
-        if existing:
-            existing.password_hash = hash_password(password)
-            db.commit()
-            print(f"Updated password for existing admin user '{username}'.")
-        else:
-            admin = AdminUser(username=username, password_hash=hash_password(password))
-            db.add(admin)
-            db.commit()
-            print(f"Created admin user '{username}'.")
+        result = sync_admin_user(db, username, password)
+        print(f"Admin user '{username}': {result}.")
     finally:
         db.close()
 

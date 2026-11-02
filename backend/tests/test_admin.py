@@ -3,6 +3,7 @@ import io
 
 from sqlalchemy.orm import sessionmaker
 
+from app.auth import sync_admin_user
 from app.models import Child, OriginalSpouse, Registration
 
 from .conftest import ADMIN_PASSWORD, ADMIN_USERNAME, VALID_SA_IDS, make_registration_payload
@@ -53,6 +54,19 @@ def test_login_rate_limited(client, admin_user):
         assert res.status_code == 401
     res = client.post("/api/admin/login", json=admin_user)
     assert res.status_code == 429
+
+
+def test_sync_admin_user_creates_and_resets_password(client, test_engine):
+    db = sessionmaker(bind=test_engine)()
+    assert sync_admin_user(db, "envadmin", "first-pass") == "created"
+    assert sync_admin_user(db, "envadmin", "first-pass") == "unchanged"
+    assert sync_admin_user(db, "envadmin", "second-pass") == "updated"
+    db.close()
+
+    res = client.post("/api/admin/login", json={"username": "envadmin", "password": "first-pass"})
+    assert res.status_code == 401
+    res = client.post("/api/admin/login", json={"username": "envadmin", "password": "second-pass"})
+    assert res.status_code == 200
 
 
 def test_list_requires_auth(client):

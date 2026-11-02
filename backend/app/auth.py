@@ -28,6 +28,20 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
 
 
+def sync_admin_user(db: Session, username: str, password: str) -> str:
+    """Create the admin user, or reset its password to match. Returns what changed."""
+    existing = db.query(AdminUser).filter(AdminUser.username == username).first()
+    if existing is None:
+        db.add(AdminUser(username=username, password_hash=hash_password(password)))
+        db.commit()
+        return "created"
+    if not verify_password(password, existing.password_hash):
+        existing.password_hash = hash_password(password)
+        db.commit()
+        return "updated"
+    return "unchanged"
+
+
 def create_access_token(subject: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=JWT_EXPIRE_MINUTES)
     payload = {"sub": subject, "exp": expire}
