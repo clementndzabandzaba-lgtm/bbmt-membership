@@ -1264,6 +1264,61 @@ button {
   border-bottom: none;
 }
 
+.reg-table__select {
+  width: 36px;
+  text-align: center;
+}
+
+.reg-table .reg-table__select input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--brand-green);
+  cursor: pointer;
+}
+
+.admin-dashboard .reg-table tbody tr.reg-table__row--selected,
+.admin-dashboard .reg-table tbody tr.reg-table__row--selected:hover {
+  background: #dfece3;
+}
+
+.reg-table__row--selected > td:first-child {
+  box-shadow: inset 4px 0 0 var(--brand-green);
+}
+
+.admin-dashboard__selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #fbfaf7;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.admin-dashboard__selection strong {
+  color: var(--brand-green-dark);
+}
+
+.admin-dashboard__selection-clear {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.admin-dashboard__selection-clear:hover {
+  border-color: var(--brand-green);
+  color: var(--brand-green-dark);
+}
+
 .reg-table__expand {
   width: 28px;
   height: 28px;

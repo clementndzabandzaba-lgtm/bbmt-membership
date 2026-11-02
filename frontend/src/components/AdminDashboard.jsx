@@ -67,6 +67,8 @@ export default function AdminDashboard({ token, onLogout }) {
   const [showEmptyModal, setShowEmptyModal] = useState(false);
   const [filters, setFilters] = useState({});
   const [showImportModal, setShowImportModal] = useState(false);
+  // Kept across pages so records can be picked from several pages and downloaded together.
+  const [selectedIds, setSelectedIds] = useState([]);
 
   const [editingRegistration, setEditingRegistration] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
@@ -130,27 +132,30 @@ export default function AdminDashboard({ token, onLogout }) {
   const countedGrandchildren = useCountUp(stats.totalGrandchildren, !loading);
   const countedPending = useCountUp(stats.pendingCount, !loading);
 
+  // A new filter means a new result set, so drop any selection from the old one.
   const handleApplyFilters = (draft) => {
     setFilters(draft);
+    setSelectedIds([]);
     setPage(1);
     load(draft, 1);
   };
 
   const handleResetFilters = () => {
     setFilters({});
+    setSelectedIds([]);
     setPage(1);
     load({}, 1);
   };
 
   const handleExport = async () => {
-    if (pageData.total === 0) {
+    if (selectedIds.length === 0 && pageData.total === 0) {
       setShowEmptyModal(true);
       return;
     }
     setExporting(true);
     setError("");
     try {
-      await downloadExcel(token, filters);
+      await downloadExcel(token, filters, selectedIds);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -159,14 +164,14 @@ export default function AdminDashboard({ token, onLogout }) {
   };
 
   const handleExportCsv = async () => {
-    if (pageData.total === 0) {
+    if (selectedIds.length === 0 && pageData.total === 0) {
       setShowEmptyModal(true);
       return;
     }
     setExportingCsv(true);
     setError("");
     try {
-      await downloadCsv(token, filters);
+      await downloadCsv(token, filters, selectedIds);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -205,6 +210,7 @@ export default function AdminDashboard({ token, onLogout }) {
     setDeleting(true);
     try {
       await deleteRegistration(token, deleteTarget.id);
+      setSelectedIds((ids) => ids.filter((id) => id !== deleteTarget.id));
       setDeleteTarget(null);
       load(filters, page);
     } catch (err) {
@@ -213,6 +219,8 @@ export default function AdminDashboard({ token, onLogout }) {
       setDeleting(false);
     }
   };
+
+  const selectionLabel = selectedIds.length > 0 ? `selected (${selectedIds.length}) ` : "";
 
   const totalPages = Math.max(1, Math.ceil(pageData.total / PAGE_SIZE));
   const rangeStart = pageData.total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -283,12 +291,27 @@ export default function AdminDashboard({ token, onLogout }) {
               ⬆ Import CSV
             </button>
             <button className="admin-dashboard__export" onClick={handleExportCsv} disabled={exportingCsv || loading}>
-              {exportingCsv ? "Preparing..." : "⬇ Download as CSV"}
+              {exportingCsv ? "Preparing..." : `⬇ Download ${selectionLabel}as CSV`}
             </button>
             <button className="admin-dashboard__export" onClick={handleExport} disabled={exporting || loading}>
-              {exporting ? "Preparing file..." : "⬇ Download as Excel"}
+              {exporting ? "Preparing file..." : `⬇ Download ${selectionLabel}as Excel`}
             </button>
           </div>
+        </div>
+
+        <div className="admin-dashboard__selection" role="status">
+          {selectedIds.length === 0 ? (
+            <span>Tick records to download only those, or download everything that matches the filters.</span>
+          ) : (
+            <>
+              <span>
+                <strong>{selectedIds.length}</strong> record{selectedIds.length > 1 ? "s" : ""} selected for download
+              </span>
+              <button type="button" className="admin-dashboard__selection-clear" onClick={() => setSelectedIds([])}>
+                Clear selection
+              </button>
+            </>
+          )}
         </div>
 
         {error && <p className="reg-form__message reg-form__message--error">⚠ {error}</p>}
@@ -299,6 +322,8 @@ export default function AdminDashboard({ token, onLogout }) {
             <RegistrationsTable
               registrations={registrations}
               token={token}
+              selectedIds={selectedIds}
+              onSelectionChange={setSelectedIds}
               onEdit={setEditingRegistration}
               onApprove={(reg) => setStatusAction({ registration: reg, action: "approved" })}
               onReject={(reg) => setStatusAction({ registration: reg, action: "rejected" })}

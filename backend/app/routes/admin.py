@@ -309,19 +309,43 @@ def _build_workbook(registrations: list[Registration]) -> Workbook:
     return wb
 
 
+MAX_EXPORT_IDS = 1000
+
+
+def _select_for_export(query, filters: RegistrationFilters, ids: list[int] | None):
+    """Explicitly selected ids take precedence over the filters, so a selection
+    made before the filters changed still exports exactly what was ticked."""
+    if ids:
+        if len(ids) > MAX_EXPORT_IDS:
+            raise HTTPException(
+                status_code=400, detail=f"Select at most {MAX_EXPORT_IDS} registrations per download"
+            )
+        return query.filter(Registration.id.in_(ids))
+    return filters.apply(query)
+
+
+def _export_filename(registrations: list[Registration], extension: str) -> str:
+    if len(registrations) == 1:
+        return f"{registrations[0].membership_number}.{extension}"
+    return f"bbmt_membership_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{extension}"
+
+
 @router.get("/registrations/export")
 def export_registrations(
     filters: RegistrationFilters = Depends(),
+    ids: list[int] | None = Query(None),
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(get_current_admin),
 ):
-    query = filters.apply(
+    query = _select_for_export(
         db.query(Registration).options(
             joinedload(Registration.children),
             joinedload(Registration.grandchildren),
             joinedload(Registration.original_spouses),
             joinedload(Registration.claimant_spouses),
-        )
+        ),
+        filters,
+        ids,
     )
     registrations = query.order_by(Registration.created_at.asc()).all()
 
@@ -330,7 +354,7 @@ def export_registrations(
     wb.save(buffer)
     buffer.seek(0)
 
-    filename = f"bbmt_membership_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    filename = _export_filename(registrations, "xlsx")
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -341,10 +365,11 @@ def export_registrations(
 @router.get("/registrations/export.csv")
 def export_registrations_csv(
     filters: RegistrationFilters = Depends(),
+    ids: list[int] | None = Query(None),
     db: Session = Depends(get_db),
     _admin: AdminUser = Depends(get_current_admin),
 ):
-    query = filters.apply(db.query(Registration))
+    query = _select_for_export(db.query(Registration), filters, ids)
     registrations = query.order_by(Registration.created_at.asc()).all()
 
     buffer = io.StringIO()
@@ -359,7 +384,7 @@ def export_registrations_csv(
             row.append(value)
         writer.writerow(row)
 
-    filename = f"bbmt_membership_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = _export_filename(registrations, "csv")
     return StreamingResponse(
         iter([buffer.getvalue()]),
         media_type="text/csv",

@@ -32,6 +32,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets the frontend read the export filename (e.g. BBMT-000045.csv).
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(public.router)

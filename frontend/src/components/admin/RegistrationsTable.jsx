@@ -2,10 +2,41 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import StatusBadge from "./StatusBadge";
 import RegistrationDetails from "./RegistrationDetails";
 
-const COLUMN_COUNT = 12;
+const COLUMN_COUNT = 13;
 
-export default function RegistrationsTable({ registrations, token, onEdit, onApprove, onReject, onDelete }) {
+export default function RegistrationsTable({
+  registrations,
+  token,
+  selectedIds = [],
+  onSelectionChange,
+  onEdit,
+  onApprove,
+  onReject,
+  onDelete,
+}) {
   const [expandedId, setExpandedId] = useState(null);
+  const selectAllRef = useRef(null);
+
+  const pageIds = registrations.map((r) => r.id);
+  const selectedOnPage = pageIds.filter((id) => selectedIds.includes(id)).length;
+  const allOnPageSelected = pageIds.length > 0 && selectedOnPage === pageIds.length;
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selectedOnPage > 0 && !allOnPageSelected;
+    }
+  }, [selectedOnPage, allOnPageSelected]);
+
+  const toggleSelected = (id) =>
+    onSelectionChange(selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
+
+  // Only touches this page's rows, so selections made on other pages are kept.
+  const toggleSelectPage = () =>
+    onSelectionChange(
+      allOnPageSelected
+        ? selectedIds.filter((id) => !pageIds.includes(id))
+        : [...selectedIds, ...pageIds.filter((id) => !selectedIds.includes(id))]
+    );
   const wrapRef = useRef(null);
   const [wrapWidth, setWrapWidth] = useState(null);
 
@@ -30,6 +61,16 @@ export default function RegistrationsTable({ registrations, token, onEdit, onApp
       <table className="reg-table">
         <thead>
           <tr>
+            <th className="reg-table__select">
+              <input
+                type="checkbox"
+                ref={selectAllRef}
+                checked={allOnPageSelected}
+                onChange={toggleSelectPage}
+                disabled={pageIds.length === 0}
+                aria-label="Select all records on this page"
+              />
+            </th>
             <th aria-label="Expand"></th>
             <th>Membership #</th>
             <th>Submitted</th>
@@ -47,9 +88,11 @@ export default function RegistrationsTable({ registrations, token, onEdit, onApp
         <tbody>
           {registrations.map((reg) => {
             const expanded = expandedId === reg.id;
+            const selected = selectedIds.includes(reg.id);
             const rowClass = [
               "reg-table__row--clickable",
               reg.is_new && "admin-dashboard__row--new",
+              selected && "reg-table__row--selected",
               expanded && "reg-table__row--expanded",
             ]
               .filter(Boolean)
@@ -57,6 +100,14 @@ export default function RegistrationsTable({ registrations, token, onEdit, onApp
             return (
               <Fragment key={reg.id}>
                 <tr className={rowClass} onClick={() => toggle(reg.id)}>
+                  <td className="reg-table__select" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => toggleSelected(reg.id)}
+                      aria-label={`Select ${reg.membership_number} for download`}
+                    />
+                  </td>
                   <td>
                     <button
                       type="button"

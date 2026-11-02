@@ -14,6 +14,10 @@ function buildQueryString(params = {}) {
   const usp = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null || value === "") continue;
+    if (Array.isArray(value)) {
+      value.forEach((v) => usp.append(key, v));
+      continue;
+    }
     usp.set(key, value);
   }
   const qs = usp.toString();
@@ -133,17 +137,22 @@ export async function deleteRegistration(token, id) {
   if (!res.ok) throw new Error("Failed to delete registration");
 }
 
-export async function downloadExcel(token, filters = {}) {
+// When ids are given only those registrations are exported (filters are ignored).
+function exportQuery(filters, ids) {
+  return buildQueryString(ids?.length ? { ids } : filters);
+}
+
+export async function downloadExcel(token, filters = {}, ids = []) {
   await downloadBlob(
-    `${API_URL}/api/admin/registrations/export${buildQueryString(filters)}`,
+    `${API_URL}/api/admin/registrations/export${exportQuery(filters, ids)}`,
     token,
     "bbmt_membership.xlsx"
   );
 }
 
-export async function downloadCsv(token, filters = {}) {
+export async function downloadCsv(token, filters = {}, ids = []) {
   await downloadBlob(
-    `${API_URL}/api/admin/registrations/export.csv${buildQueryString(filters)}`,
+    `${API_URL}/api/admin/registrations/export.csv${exportQuery(filters, ids)}`,
     token,
     "bbmt_membership.csv"
   );

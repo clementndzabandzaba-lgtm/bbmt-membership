@@ -212,6 +212,50 @@ def test_csv_export_includes_membership_number_and_import_ignores_it(client, aut
     assert import_res.json()["errors"] == []
 
 
+def test_export_selected_ids_only(client, auth_headers, test_engine):
+    db = sessionmaker(bind=test_engine)()
+    regs = [Registration(kgoro="Sel", claimant_name=f"Selected {i}", consent_given=True) for i in range(3)]
+    db.add_all(regs)
+    db.commit()
+    wanted = [regs[0].id, regs[2].id]
+    db.close()
+
+    res = client.get("/api/admin/registrations/export.csv", params={"ids": wanted}, headers=auth_headers)
+    assert res.status_code == 200
+    exported = sorted(int(r["ID"]) for r in csv.DictReader(io.StringIO(res.text)))
+    assert exported == sorted(wanted)
+
+    # Explicit selection wins over filters that would otherwise exclude it.
+    res = client.get(
+        "/api/admin/registrations/export.csv",
+        params={"ids": wanted, "kgoro": "no-such-kgoro"},
+        headers=auth_headers,
+    )
+    assert len(list(csv.DictReader(io.StringIO(res.text)))) == 2
+
+    res = client.get("/api/admin/registrations/export", params={"ids": wanted}, headers=auth_headers)
+    assert res.status_code == 200
+    from openpyxl import load_workbook
+
+    sheet = load_workbook(io.BytesIO(res.content))["Registrations"]
+    assert sheet.max_row == 3  # header + 2 selected
+
+
+def test_export_single_record_named_by_membership_number(client, auth_headers):
+    reg = client.post("/api/registrations", json=make_registration_payload()).json()
+    for path, ext in (("export.csv", "csv"), ("export", "xlsx")):
+        res = client.get(f"/api/admin/registrations/{path}", params={"ids": [reg["id"]]}, headers=auth_headers)
+        assert res.status_code == 200
+        assert f'filename="{reg["membership_number"]}.{ext}"' in res.headers["content-disposition"]
+
+
+def test_export_rejects_too_many_ids(client, auth_headers):
+    res = client.get(
+        "/api/admin/registrations/export.csv", params={"ids": list(range(1, 1002))}, headers=auth_headers
+    )
+    assert res.status_code == 400
+
+
 def test_list_registrations_with_nested_children(client, auth_headers):
     payload = make_registration_payload(
         reference_no="WITH-CHILDREN",
