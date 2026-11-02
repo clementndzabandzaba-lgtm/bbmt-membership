@@ -751,7 +751,38 @@ button {
   gap: 6px;
 }
 
-.admin-portal__form button {
+.admin-portal__password {
+  position: relative;
+  display: flex;
+}
+
+.admin-portal__password input {
+  flex: 1;
+  padding-right: 44px;
+}
+
+/* Hide Edge's built-in reveal button so only our toggle shows. */
+.admin-portal__password input::-ms-reveal,
+.admin-portal__password input::-ms-clear {
+  display: none;
+}
+
+.admin-portal__password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: none;
+  border: none;
+  color: #000;
+  cursor: pointer;
+}
+
+.admin-portal__form button[type="submit"] {
   padding: 12px;
   font-weight: 700;
   background: linear-gradient(135deg, var(--brand-green), var(--brand-green-dark));
@@ -764,17 +795,17 @@ button {
   transition: transform 0.15s ease, box-shadow 0.15s ease, background-position 0.4s ease;
 }
 
-.admin-portal__form button:hover:not(:disabled) {
+.admin-portal__form button[type="submit"]:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 10px 24px rgba(36, 74, 50, 0.35);
   background-position: 100% 100%;
 }
 
-.admin-portal__form button:active:not(:disabled) {
+.admin-portal__form button[type="submit"]:active:not(:disabled) {
   transform: translateY(0);
 }
 
-.admin-portal__form button:disabled {
+.admin-portal__form button[type="submit"]:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
