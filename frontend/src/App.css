@@ -450,6 +450,7 @@ select {
 .reg-table td {
   padding: 6px 8px;
   border-bottom: 1px solid var(--line-soft);
+  color: var(--ink);
 }
 
 .reg-table tbody tr:last-child td {

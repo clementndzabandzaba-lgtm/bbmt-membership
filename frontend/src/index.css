@@ -1,6 +1,9 @@
 :root {
   font: 16px/145% system-ui, "Segoe UI", Roboto, sans-serif;
-  color-scheme: light dark;
+  /* The palette is light-only; "light dark" let dark-mode browsers turn
+     unstyled text white on our light backgrounds. */
+  color-scheme: light;
+  color: #262524;
 }
 
 * {
