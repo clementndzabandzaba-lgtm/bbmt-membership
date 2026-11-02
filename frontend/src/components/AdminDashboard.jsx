@@ -298,6 +298,7 @@ export default function AdminDashboard({ token, onLogout }) {
           <>
             <RegistrationsTable
               registrations={registrations}
+              token={token}
               onEdit={setEditingRegistration}
               onApprove={(reg) => setStatusAction({ registration: reg, action: "approved" })}
               onReject={(reg) => setStatusAction({ registration: reg, action: "rejected" })}
